@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.op-btn {
+  @apply px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed
+         rounded text-sm text-slate-200 transition-colors;
+}
+
+.toolbar-btn {
+  @apply px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed
+         rounded text-sm text-slate-200 transition-colors;
+}
+
+.param-input {
+  @apply block px-2 py-1 bg-slate-800 border border-slate-600 rounded text-sm text-slate-200
+         focus:outline-none focus:border-blue-500;
+}

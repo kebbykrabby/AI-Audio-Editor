@@ -1,0 +1,489 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/operations.schema.json",
+  "title": "AI Audio Editor Operation Plan",
+  "description": "Strict schema for validated audio edit plans.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "intent",
+    "operations",
+    "needs_confirmation",
+    "explanation"
+  ],
+  "properties": {
+    "intent": {
+      "type": "string",
+      "const": "edit_audio"
+    },
+    "needs_confirmation": {
+      "type": "boolean"
+    },
+    "explanation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "validation_errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    }
+  },
+  "$defs": {
+    "assetId": {
+      "type": "string",
+      "pattern": "^ast_[A-Za-z0-9_-]{3,64}$"
+    },
+    "operationId": {
+      "type": "string",
+      "pattern": "^op_[A-Za-z0-9_-]{3,64}$"
+    },
+    "timeSec": {
+      "type": "number",
+      "minimum": 0
+    },
+    "timeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "start_sec",
+        "end_sec"
+      ],
+      "properties": {
+        "start_sec": {
+          "$ref": "#/$defs/timeSec"
+        },
+        "end_sec": {
+          "$ref": "#/$defs/timeSec"
+        }
+      }
+    },
+    "baseOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id",
+        "type",
+        "input_asset_id",
+        "parameters",
+        "confidence",
+        "human_explanation"
+      ],
+      "properties": {
+        "operation_id": {
+          "$ref": "#/$defs/operationId"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "trim",
+            "split",
+            "delete",
+            "fade_in",
+            "fade_out",
+            "gain",
+            "normalize",
+            "remove_silence",
+            "export"
+          ]
+        },
+        "input_asset_id": {
+          "$ref": "#/$defs/assetId"
+        },
+        "target_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/timeRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parameters": {
+          "type": "object"
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "human_explanation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "trimOperation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseOperation"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "trim"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "start_sec",
+                "end_sec"
+              ],
+              "properties": {
+                "start_sec": {
+                  "$ref": "#/$defs/timeSec"
+                },
+                "end_sec": {
+                  "$ref": "#/$defs/timeSec"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "splitOperation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseOperation"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "split"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "split_sec"
+              ],
+              "properties": {
+                "split_sec": {
+                  "$ref": "#/$defs/timeSec"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "deleteOperation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseOperation"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "delete"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "start_sec",
+                "end_sec"
+              ],
+              "properties": {
+                "start_sec": {
+                  "$ref": "#/$defs/timeSec"
+                },
+                "end_sec": {
+                  "$ref": "#/$defs/timeSec"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "fadeInOperation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseOperation"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "fade_in"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "duration_sec"
+              ],
+              "properties": {
+                "duration_sec": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "curve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "exponential"
+                  ],
+                  "default": "linear"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "fadeOutOperation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseOperation"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "fade_out"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "duration_sec"
+              ],
+              "properties": {
+                "duration_sec": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "curve": {
+                  "type": "string",
+                  "enum": [
+                    "linear",
+                    "exponential"
+                  ],
+                  "default": "linear"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "gainOperation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseOperation"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "gain"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "gain_db"
+              ],
+              "properties": {
+                "gain_db": {
+                  "type": "number",
+                  "minimum": -60,
+                  "maximum": 24
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "normalizeOperation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseOperation"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "normalize"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "method",
+                "target_db"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "peak"
+                  ]
+                },
+                "target_db": {
+                  "type": "number",
+                  "minimum": -12,
+                  "maximum": 0
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "removeSilenceOperation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseOperation"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "remove_silence"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "threshold_db",
+                "min_silence_len_ms",
+                "padding_ms"
+              ],
+              "properties": {
+                "threshold_db": {
+                  "type": "number",
+                  "minimum": -80,
+                  "maximum": -10
+                },
+                "min_silence_len_ms": {
+                  "type": "integer",
+                  "minimum": 50,
+                  "maximum": 10000
+                },
+                "padding_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 2000
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "exportOperation": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/baseOperation"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "export"
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "format"
+              ],
+              "properties": {
+                "format": {
+                  "type": "string",
+                  "enum": [
+                    "wav",
+                    "mp3"
+                  ]
+                },
+                "sample_rate": {
+                  "type": "integer",
+                  "enum": [
+                    22050,
+                    44100,
+                    48000
+                  ]
+                },
+                "bitrate_kbps": {
+                  "type": "integer",
+                  "enum": [
+                    128,
+                    192,
+                    256,
+                    320
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "format": {
+                        "const": "wav"
+                      }
+                    },
+                    "required": [
+                      "format"
+                    ]
+                  },
+                  "then": {
+                    "not": {
+                      "required": [
+                        "bitrate_kbps"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "operation": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/trimOperation"
+        },
+        {
+          "$ref": "#/$defs/splitOperation"
+        },
+        {
+          "$ref": "#/$defs/deleteOperation"
+        },
+        {
+          "$ref": "#/$defs/fadeInOperation"
+        },
+        {
+          "$ref": "#/$defs/fadeOutOperation"
+        },
+        {
+          "$ref": "#/$defs/gainOperation"
+        },
+        {
+          "$ref": "#/$defs/normalizeOperation"
+        },
+        {
+          "$ref": "#/$defs/removeSilenceOperation"
+        },
+        {
+          "$ref": "#/$defs/exportOperation"
+        }
+      ]
+    }
+  }
+}
