@@ -1,0 +1,31 @@
+[project]
+name = "audio-editor-backend"
+version = "0.1.0"
+description = "AI Audio Editor - FastAPI Backend"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.20",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "python-multipart",
+    "numpy",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "ruff",
+    "mypy",
+]
+postgres = [
+    "asyncpg",
+    "psycopg2-binary",
+    "alembic>=1.13",
+]

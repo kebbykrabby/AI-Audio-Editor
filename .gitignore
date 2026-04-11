@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Build output
+dist/
+.vite/
+*.whl
+
+# Environment
+.env
+.env.local
+
+# Storage (uploaded audio files)
+storage/
+
+# IDE
+.vscode/
+.idea/
+
+# Caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Database (SQLite dev)
+*.db
+*.db-journal
+
+# Test fixtures
+test_tone.wav
+
+# Claude Code
+.claude/
