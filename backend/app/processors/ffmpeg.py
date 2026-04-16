@@ -194,9 +194,14 @@ async def remove_silence(
     input_path: Path, output_path: Path,
     threshold_db: float = -40, min_silence_sec: float = 0.5,
 ) -> ProcessingResult:
+    af = (
+        f"silenceremove="
+        f"start_periods=1:start_duration={min_silence_sec}:start_threshold={threshold_db}dB:"
+        f"stop_periods=-1:stop_duration={min_silence_sec}:stop_threshold={threshold_db}dB"
+    )
     await _run_ffmpeg(
         "-i", str(input_path),
-        "-af", f"silenceremove=stop_periods=-1:stop_duration={min_silence_sec}:stop_threshold={threshold_db}dB",
+        "-af", af,
         str(output_path),
     )
     return ProcessingResult(success=True)
@@ -231,10 +236,17 @@ async def mono_mixdown(input_path: Path, output_path: Path) -> ProcessingResult:
 
 
 async def speed(input_path: Path, output_path: Path, factor: float) -> ProcessingResult:
-    if factor <= 2.0:
-        af = f"atempo={factor}"
-    else:
-        af = f"atempo=2.0,atempo={factor / 2.0}"
+    # FFmpeg atempo accepts [0.5, 2.0]. Chain filters for factors outside this range.
+    parts: list[str] = []
+    remaining = factor
+    while remaining < 0.5:
+        parts.append("atempo=0.5")
+        remaining /= 0.5
+    while remaining > 2.0:
+        parts.append("atempo=2.0")
+        remaining /= 2.0
+    parts.append(f"atempo={remaining}")
+    af = ",".join(parts)
     await _run_ffmpeg(
         "-i", str(input_path),
         "-af", af,
