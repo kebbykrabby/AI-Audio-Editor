@@ -35,6 +35,39 @@ class NormalizeParams(BaseModel):
     target_db: float = Field(ge=-60, le=0)
 
 
+class ReverseParams(BaseModel):
+    pass
+
+
+class RemoveSilenceParams(BaseModel):
+    threshold_db: float = Field(ge=-80, le=0, default=-40)
+    min_silence_sec: float = Field(gt=0, le=10, default=0.5)
+
+
+class ExtractChannelParams(BaseModel):
+    channel: Literal["left", "right"]
+
+
+class SwapChannelsParams(BaseModel):
+    pass
+
+
+class MonoMixdownParams(BaseModel):
+    pass
+
+
+class SpeedParams(BaseModel):
+    factor: float = Field(gt=0.25, le=4.0)
+
+
+class SplitChannelsParams(BaseModel):
+    pass
+
+
+class MergeChannelsParams(BaseModel):
+    right_asset_id: str
+
+
 # --- Operation request models (discriminated union) ---
 
 class TrimOperation(BaseModel):
@@ -67,13 +100,61 @@ class NormalizeOperation(BaseModel):
     parameters: NormalizeParams
 
 
+class ReverseOperation(BaseModel):
+    type: Literal["reverse"]
+    parameters: ReverseParams
+
+
+class RemoveSilenceOperation(BaseModel):
+    type: Literal["remove_silence"]
+    parameters: RemoveSilenceParams
+
+
+class ExtractChannelOperation(BaseModel):
+    type: Literal["extract_channel"]
+    parameters: ExtractChannelParams
+
+
+class SwapChannelsOperation(BaseModel):
+    type: Literal["swap_channels"]
+    parameters: SwapChannelsParams
+
+
+class MonoMixdownOperation(BaseModel):
+    type: Literal["mono_mixdown"]
+    parameters: MonoMixdownParams
+
+
+class SpeedOperation(BaseModel):
+    type: Literal["speed"]
+    parameters: SpeedParams
+
+
+class SplitChannelsOperation(BaseModel):
+    type: Literal["split_channels"]
+    parameters: SplitChannelsParams
+
+
+class MergeChannelsOperation(BaseModel):
+    type: Literal["merge_channels"]
+    parameters: MergeChannelsParams
+
+
 OperationRequest = Annotated[
     TrimOperation
     | DeleteOperation
     | FadeInOperation
     | FadeOutOperation
     | GainOperation
-    | NormalizeOperation,
+    | NormalizeOperation
+    | ReverseOperation
+    | RemoveSilenceOperation
+    | ExtractChannelOperation
+    | SwapChannelsOperation
+    | MonoMixdownOperation
+    | SpeedOperation
+    | SplitChannelsOperation
+    | MergeChannelsOperation,
     Field(discriminator="type"),
 ]
 
@@ -85,3 +166,4 @@ class OperationResponse(BaseModel):
     status: str
     warning: str | None = None
     asset: AssetResponse
+    secondaryAsset: AssetResponse | None = None

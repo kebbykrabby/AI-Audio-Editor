@@ -1,9 +1,9 @@
-# PRD — AI Audio Editor (V1 Final)
+# PRD — AI Audio Editor (V2)
 
 ## Overview
 Web-based audio editor with deterministic backend processing.
 
-## V1 Scope
+## V1 Scope (shipped)
 
 ### Features
 - Upload audio (WAV, MP3 ≤100MB)
@@ -33,6 +33,34 @@ Web-based audio editor with deterministic backend processing.
 - remove_silence
 - AI editing
 - projects system
+
+## V2 Scope
+
+### New Operations
+- reverse (reverse entire audio, duration-preserving)
+- remove_silence (detect and strip silent segments by threshold + minimum duration)
+- extract_channel (extract left or right channel from stereo → mono output)
+- swap_channels (swap L/R channels in stereo audio)
+- mono_mixdown (mix stereo to mono via (L+R)/2)
+- speed (change playback speed 0.25x–4.0x with pitch preservation via FFmpeg atempo)
+
+### Channel Operations
+- extract_channel, swap_channels, and mono_mixdown require stereo input (channels=2)
+- extract_channel and mono_mixdown change the output channel count (stereo → mono)
+- swap_channels preserves stereo
+- Backend validates channel count before processing; returns INVALID_PARAMETERS if input is mono
+
+### Speed Operation
+- Uses FFmpeg atempo filter (supports 0.5–2.0 natively; factors >2.0 chain two atempo stages)
+- Preserves pitch while changing duration (new_duration = original_duration / factor)
+- Duration-changing operation (selection is cleared after apply)
+
+### Out of Scope (V2)
+- split
+- AI editing
+- projects system
+- per-channel gain/fade
+- stereo panning
 
 ## Architecture
 
@@ -110,11 +138,11 @@ Synchronous in V1. `POST /api/export` blocks until the export file is ready.
 
 ## Selection Behavior After Edits
 
-### Duration-Changing Operations (trim, delete)
+### Duration-Changing Operations (trim, delete, remove_silence, speed)
 - Clear selection after the operation completes
 - Old timestamps are invalid because the audio duration changed
 
-### Duration-Preserving Operations (gain, normalize, fade_in, fade_out)
+### Duration-Preserving Operations (gain, normalize, fade_in, fade_out, reverse, extract_channel, swap_channels, mono_mixdown)
 - Preserve the current selection
 - The audio duration did not change, so the selection remains valid
 
@@ -161,12 +189,18 @@ Synchronous in V1. `POST /api/export` blocks until the export file is ready.
 - No channel splitting or extraction features exposed to the user
 - No dual-channel waveform UI
 
-### Future (V2+)
-The architecture should allow adding channel-level operations, including:
-- extract left/right channel
-- per-channel gain/fade
-- channel swapping
-- mono mixdown
-- stereo panning
+### Implemented in V2
+- extract left/right channel (extract_channel)
+- channel swapping (swap_channels)
+- mono mixdown (mono_mixdown)
+- silence removal (remove_silence)
+- reverse audio (reverse)
+- speed change with pitch preservation (speed)
 
-These features are explicitly deferred to V2 to keep V1 focused and simple.
+### Future (V3+)
+The architecture should allow adding these features in future versions:
+- split (split audio at a point into two assets)
+- per-channel gain/fade
+- stereo panning
+- AI editing
+- projects system

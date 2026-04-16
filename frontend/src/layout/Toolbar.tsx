@@ -12,6 +12,7 @@ export default function Toolbar() {
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const setError = useEditorStore((s) => s.setError);
+  const channelEdit = useEditorStore((s) => s.channelEdit);
   const [isExporting, setIsExporting] = useState(false);
 
   // Keyboard shortcuts
@@ -62,6 +63,7 @@ export default function Toolbar() {
       <div className="flex items-center gap-3">
         <button
           onClick={reset}
+          disabled={!!channelEdit}
           className="toolbar-btn"
           title="Upload a new file"
         >
@@ -69,14 +71,16 @@ export default function Toolbar() {
         </button>
         <div className="w-px h-6 bg-slate-600 mx-1" />
         <span className="text-sm font-medium text-slate-300 truncate max-w-xs">
-          {asset.sampleRate}Hz / {asset.channels === 2 ? "Stereo" : "Mono"}
-          {asset.durationSec ? ` / ${asset.durationSec.toFixed(1)}s` : ""}
+          {channelEdit
+            ? `Channel Edit: ${channelEdit.activeChannel === "left" ? "Left" : "Right"}`
+            : `${asset.sampleRate}Hz / ${asset.channels === 2 ? "Stereo" : "Mono"}${asset.durationSec ? ` / ${asset.durationSec.toFixed(1)}s` : ""}`
+          }
         </span>
       </div>
       <div className="flex items-center gap-2">
         <button
           onClick={undo}
-          disabled={!canUndo}
+          disabled={!canUndo || !!channelEdit}
           className="toolbar-btn"
           title="Undo (Ctrl+Z)"
         >
@@ -84,7 +88,7 @@ export default function Toolbar() {
         </button>
         <button
           onClick={redo}
-          disabled={!canRedo}
+          disabled={!canRedo || !!channelEdit}
           className="toolbar-btn"
           title="Redo (Ctrl+Shift+Z)"
         >
@@ -93,14 +97,14 @@ export default function Toolbar() {
         <div className="w-px h-6 bg-slate-600 mx-1" />
         <button
           onClick={() => handleExport("wav")}
-          disabled={isExporting}
+          disabled={isExporting || !!channelEdit}
           className="toolbar-btn"
         >
           {isExporting ? "Exporting..." : "Export WAV"}
         </button>
         <button
           onClick={() => handleExport("mp3")}
-          disabled={isExporting}
+          disabled={isExporting || !!channelEdit}
           className="toolbar-btn"
         >
           {isExporting ? "Exporting..." : "Export MP3"}

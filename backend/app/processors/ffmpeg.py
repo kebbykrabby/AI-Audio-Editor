@@ -1,6 +1,8 @@
 import asyncio
 import json
+import subprocess
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
 
@@ -10,26 +12,36 @@ class ProcessingResult:
     warning: str | None = None
 
 
-async def _run_ffmpeg(*args: str, timeout: float = 30) -> None:
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-y", *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+def _run_ffmpeg_sync(*args: str, timeout: float = 30) -> None:
+    result = subprocess.run(
+        ["ffmpeg", "-y", *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
     )
-    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    if proc.returncode != 0:
-        raise RuntimeError(f"FFmpeg failed: {stderr.decode()[-500:]}")
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg failed: {result.stderr.decode()[-500:]}")
+
+
+async def _run_ffmpeg(*args: str, timeout: float = 30) -> None:
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, partial(_run_ffmpeg_sync, *args, timeout=timeout))
+
+
+def _probe_sync(path: Path) -> dict:
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json",
+         "-show_format", "-show_streams", str(path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=10,
+    )
+    return json.loads(result.stdout)
 
 
 async def _probe(path: Path) -> dict:
-    proc = await asyncio.create_subprocess_exec(
-        "ffprobe", "-v", "quiet", "-print_format", "json",
-        "-show_format", "-show_streams", str(path),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
-    return json.loads(stdout)
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _probe_sync, path)
 
 
 async def probe_audio(path: Path) -> dict:
@@ -49,15 +61,19 @@ async def probe_audio(path: Path) -> dict:
 
 async def _detect_clipping(path: Path) -> bool:
     """Check if audio clips (peak > 0 dBFS) using FFmpeg astats."""
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-i", str(path),
-        "-af", "astats=metadata=1:reset=0,ametadata=print:key=lavfi.astats.Overall.Peak_level",
-        "-f", "null", "-",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-    output = stderr.decode()
+    def _run():
+        return subprocess.run(
+            ["ffmpeg", "-i", str(path),
+             "-af", "astats=metadata=1:reset=0,ametadata=print:key=lavfi.astats.Overall.Peak_level",
+             "-f", "null", "-"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _run)
+    output = result.stderr.decode()
     for line in output.split("\n"):
         if "Peak_level" in line:
             try:
@@ -162,4 +178,95 @@ async def export_audio(
             args.extend(["-b:a", f"{bitrate_kbps}k"])
     args.append(str(output_path))
     await _run_ffmpeg(*args)
+    return ProcessingResult(success=True)
+
+
+async def reverse(input_path: Path, output_path: Path) -> ProcessingResult:
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-af", "areverse",
+        str(output_path),
+    )
+    return ProcessingResult(success=True)
+
+
+async def remove_silence(
+    input_path: Path, output_path: Path,
+    threshold_db: float = -40, min_silence_sec: float = 0.5,
+) -> ProcessingResult:
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-af", f"silenceremove=stop_periods=-1:stop_duration={min_silence_sec}:stop_threshold={threshold_db}dB",
+        str(output_path),
+    )
+    return ProcessingResult(success=True)
+
+
+async def extract_channel(input_path: Path, output_path: Path, channel: str) -> ProcessingResult:
+    pan_filter = "pan=mono|c0=c0" if channel == "left" else "pan=mono|c0=c1"
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-af", pan_filter,
+        str(output_path),
+    )
+    return ProcessingResult(success=True)
+
+
+async def swap_channels(input_path: Path, output_path: Path) -> ProcessingResult:
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-af", "pan=stereo|c0=c1|c1=c0",
+        str(output_path),
+    )
+    return ProcessingResult(success=True)
+
+
+async def mono_mixdown(input_path: Path, output_path: Path) -> ProcessingResult:
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-ac", "1",
+        str(output_path),
+    )
+    return ProcessingResult(success=True)
+
+
+async def speed(input_path: Path, output_path: Path, factor: float) -> ProcessingResult:
+    if factor <= 2.0:
+        af = f"atempo={factor}"
+    else:
+        af = f"atempo=2.0,atempo={factor / 2.0}"
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-af", af,
+        str(output_path),
+    )
+    return ProcessingResult(success=True)
+
+
+async def split_channels(
+    input_path: Path, left_output: Path, right_output: Path,
+) -> ProcessingResult:
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-af", "pan=mono|c0=c0",
+        str(left_output),
+    )
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-af", "pan=mono|c0=c1",
+        str(right_output),
+    )
+    return ProcessingResult(success=True)
+
+
+async def merge_channels(
+    left_path: Path, right_path: Path, output_path: Path,
+) -> ProcessingResult:
+    await _run_ffmpeg(
+        "-i", str(left_path),
+        "-i", str(right_path),
+        "-filter_complex", "[0:a][1:a]join=inputs=2:channel_layout=stereo[out]",
+        "-map", "[out]",
+        str(output_path),
+    )
     return ProcessingResult(success=True)

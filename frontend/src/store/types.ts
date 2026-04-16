@@ -20,6 +20,7 @@ export interface OperationResponse {
   status: string;
   warning: string | null;
   asset: Asset;
+  secondaryAsset: Asset | null;
 }
 
 export interface ExportResponse {
