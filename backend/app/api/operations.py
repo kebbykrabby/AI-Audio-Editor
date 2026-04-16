@@ -32,7 +32,12 @@ async def run_operation(asset_id: str, body: OperationRequest, db: AsyncSession 
         status = status_map.get(e.code, 500)
         content = {"error": {"code": e.code, "message": e.message}}
         if e.field:
-            content["error"]["details"] = {"field": e.field}
+            details: dict = {"field": e.field}
+            if e.constraint:
+                details["constraint"] = e.constraint
+            if e.received is not None:
+                details["received"] = e.received
+            content["error"]["details"] = details
         return JSONResponse(status_code=status, content=content)
 
     def _asset_response(a) -> AssetResponse:

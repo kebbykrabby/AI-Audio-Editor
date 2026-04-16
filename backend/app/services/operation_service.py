@@ -19,10 +19,13 @@ def _new_id(prefix: str) -> str:
 
 
 class OperationError(Exception):
-    def __init__(self, code: str, message: str, field: str | None = None):
+    def __init__(self, code: str, message: str, field: str | None = None,
+                 constraint: str | None = None, received: float | str | None = None):
         self.code = code
         self.message = message
         self.field = field
+        self.constraint = constraint
+        self.received = received
 
 
 async def execute_operation(
@@ -38,9 +41,15 @@ async def execute_operation(
     # Channel-aware validation
     channels = input_asset.channels or 1
     if op_type in ("extract_channel", "swap_channels", "split_channels") and channels < 2:
-        raise OperationError("INVALID_PARAMETERS", f"{op_type} requires stereo audio (2 channels)", "channel")
+        raise OperationError(
+            "INVALID_PARAMETERS", f"{op_type} requires stereo audio (2 channels)",
+            field="channels", constraint="must be >= 2", received=channels,
+        )
     if op_type == "mono_mixdown" and channels < 2:
-        raise OperationError("INVALID_PARAMETERS", "mono_mixdown requires stereo audio (2 channels)")
+        raise OperationError(
+            "INVALID_PARAMETERS", "mono_mixdown requires stereo audio (2 channels)",
+            field="channels", constraint="must be >= 2", received=channels,
+        )
 
     duration = input_asset.duration_sec or 0
 
@@ -273,14 +282,29 @@ def _validate_params(op_type: str, params: dict, duration: float) -> None:
         start = params["start_sec"]
         end = params["end_sec"]
         if start >= end:
-            raise OperationError("INVALID_PARAMETERS", "start_sec must be less than end_sec", "start_sec")
+            raise OperationError(
+                "INVALID_PARAMETERS", "start_sec must be less than end_sec",
+                field="start_sec", constraint="must be < end_sec", received=start,
+            )
         if start >= duration:
-            raise OperationError("INVALID_PARAMETERS", "start_sec exceeds audio duration", "start_sec")
+            raise OperationError(
+                "INVALID_PARAMETERS", "start_sec exceeds audio duration",
+                field="start_sec", constraint=f"must be < {duration}", received=start,
+            )
         if end > duration:
-            raise OperationError("INVALID_PARAMETERS", "end_sec exceeds audio duration", "end_sec")
+            raise OperationError(
+                "INVALID_PARAMETERS", "end_sec exceeds audio duration",
+                field="end_sec", constraint=f"must be <= {duration}", received=end,
+            )
         if op_type == "delete" and start <= 0 and end >= duration:
-            raise OperationError("INVALID_PARAMETERS", "delete range covers entire file; output would be empty", "end_sec")
+            raise OperationError(
+                "INVALID_PARAMETERS", "delete range covers entire file; output would be empty",
+                field="end_sec", constraint="range must not cover entire file", received=end,
+            )
 
     elif op_type in ("fade_in", "fade_out"):
         if params["duration_sec"] > duration:
-            raise OperationError("INVALID_PARAMETERS", "fade duration exceeds audio duration", "duration_sec")
+            raise OperationError(
+                "INVALID_PARAMETERS", "fade duration exceeds audio duration",
+                field="duration_sec", constraint=f"must be <= {duration}", received=params["duration_sec"],
+            )
