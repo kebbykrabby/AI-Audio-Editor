@@ -4,15 +4,11 @@
   "title": "Audio Editor Operation (V2)",
   "description": "Schema for a single audio edit operation. Uses discriminated union on 'type' for per-operation parameter validation.",
   "type": "object",
-  "required": ["type", "input_asset_id", "parameters"],
+  "required": ["type", "parameters"],
   "properties": {
     "type": {
       "type": "string",
       "enum": ["trim", "delete", "fade_in", "fade_out", "gain", "normalize", "reverse", "remove_silence", "extract_channel", "swap_channels", "mono_mixdown", "speed"]
-    },
-    "input_asset_id": {
-      "type": "string",
-      "pattern": "^ast_[A-Za-z0-9_-]{3,64}$"
     },
     "parameters": {
       "type": "object"
@@ -232,7 +228,7 @@
             "type": "object",
             "required": ["factor"],
             "properties": {
-              "factor": { "type": "number", "exclusiveMinimum": 0.25, "maximum": 4.0 }
+              "factor": { "type": "number", "minimum": 0.25, "maximum": 4.0 }
             },
             "additionalProperties": false
           }

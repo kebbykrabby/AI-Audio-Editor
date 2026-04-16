@@ -89,13 +89,12 @@ Notes:
 ---
 
 ## Execute Operation
-POST /api/operations
+POST /api/assets/{id}/operations
 
 Request:
 ```json
 {
   "type": "trim",
-  "input_asset_id": "ast_123",
   "parameters": {
     "start_sec": 5.2,
     "end_sec": 12.7
@@ -103,7 +102,7 @@ Request:
 }
 ```
 
-Request body must conform to operations.schema.json.
+The asset ID is specified in the URL path. Request body parameters must conform to operations.schema.json.
 
 ### Operation Semantics
 | Type | Behavior |
@@ -119,7 +118,7 @@ Request body must conform to operations.schema.json.
 | extract_channel | Extract left or right channel from stereo to mono. Requires stereo input (channels=2). Parameter: `channel` ("left" or "right"). Output is mono. |
 | swap_channels | Swap left and right channels. Requires stereo input (channels=2). No parameters. Output preserves stereo. |
 | mono_mixdown | Mix stereo audio down to mono ((L+R)/2). Requires stereo input (channels=2). No parameters. Output is mono. |
-| speed | Change playback speed by `factor` (0.25–4.0) with pitch preservation. Output duration = input_duration / factor. |
+| speed | Change playback speed by `factor` (0.25×–4.0×) with pitch preservation via FFmpeg atempo. Output duration = input_duration / factor. |
 
 Response (200 OK):
 ```json
@@ -190,12 +189,11 @@ Notes:
 ---
 
 ## Export
-POST /api/export
+POST /api/assets/{id}/export
 
 Request:
 ```json
 {
-  "asset_id": "ast_456",
   "format": "mp3",
   "sample_rate": 44100,
   "bitrate_kbps": 320
@@ -290,7 +288,7 @@ These constraints cannot be expressed in JSON Schema and must be enforced by the
 ### Parameter Range Rules
 | Rule | Applies To | Error |
 |------|-----------|-------|
-| `0.25 < factor <= 4.0` | speed | Schema validation (422) |
+| `0.25 <= factor <= 4.0` | speed | Schema validation (422) |
 | `-80 <= threshold_db <= 0` | remove_silence | Schema validation (422) |
 | `0 < min_silence_sec <= 10` | remove_silence | Schema validation (422) |
 
@@ -311,6 +309,36 @@ These constraints cannot be expressed in JSON Schema and must be enforced by the
 - Backend must configure CORS middleware to allow the frontend origin
 - Max request body size: 100MB (configure in FastAPI and any reverse proxy)
 - Uploads over 100MB are rejected at the middleware level before buffering
+
+---
+
+## Preview Operations (V2+)
+
+The following operations are implemented but not part of the formal V2 contract. They may change in future versions.
+
+### split_channels
+POST /api/assets/{id}/operations
+```json
+{"type": "split_channels", "parameters": {}}
+```
+Splits a stereo asset into two mono assets (left and right channels). Requires stereo input.
+Response includes a `secondaryAsset` field alongside the primary `asset`:
+```json
+{
+  "operationId": "op_...",
+  "status": "completed",
+  "asset": { "assetId": "ast_left", "channels": 1, ... },
+  "secondaryAsset": { "assetId": "ast_right", "channels": 1, ... }
+}
+```
+The `secondaryAsset` field is `null` for all standard V2 operations.
+
+### merge_channels
+POST /api/assets/{id}/operations
+```json
+{"type": "merge_channels", "parameters": {"right_asset_id": "ast_right"}}
+```
+Merges two mono assets into one stereo asset. The URL asset is used as the left channel; `right_asset_id` specifies the right channel.
 
 ---
 

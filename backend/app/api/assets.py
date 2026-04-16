@@ -70,7 +70,12 @@ async def get_asset(asset_id: str, db: AsyncSession = Depends(get_db)):
     if asset.status == "processing":
         headers["Retry-After"] = "2"
 
-    return JSONResponse(content=response.model_dump(), headers=headers)
+    # Strip error field on non-failed responses to match contract (error only appears on failed).
+    payload = response.model_dump()
+    if payload.get("error") is None:
+        payload.pop("error", None)
+
+    return JSONResponse(content=payload, headers=headers)
 
 
 @router.get("/{asset_id}/audio")
