@@ -57,7 +57,7 @@ class MonoMixdownParams(BaseModel):
 
 
 class SpeedParams(BaseModel):
-    factor: float = Field(gt=0.25, le=4.0)
+    factor: float = Field(ge=0.25, le=4.0)
 
 
 class SplitChannelsParams(BaseModel):
