@@ -1,4 +1,5 @@
 import { useEditorStore } from "../store/editorStore";
+import { useRestoreSession } from "../store/useRestoreSession";
 import UploadZone from "./UploadZone";
 import Toolbar from "./Toolbar";
 import WaveformPlayer from "../audio/WaveformPlayer";
@@ -8,6 +9,7 @@ import OperationPanel from "../editor/OperationPanel";
 import ChannelEditor from "../editor/ChannelEditor";
 
 export default function Shell() {
+  const { isRestoring } = useRestoreSession();
   const asset = useEditorStore((s) => s.currentAsset());
   const error = useEditorStore((s) => s.error);
   const warning = useEditorStore((s) => s.warning);
@@ -15,6 +17,14 @@ export default function Shell() {
   const setError = useEditorStore((s) => s.setError);
   const setWarning = useEditorStore((s) => s.setWarning);
   const channelEdit = useEditorStore((s) => s.channelEdit);
+
+  if (isRestoring) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-slate-400 text-sm">Restoring session…</div>
+      </div>
+    );
+  }
 
   if (!asset || asset.status !== "ready") {
     return <UploadZone />;

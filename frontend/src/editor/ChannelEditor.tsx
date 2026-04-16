@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { executeOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
-import type { Asset } from "../store/types";
 import WaveformPlayer from "../audio/WaveformPlayer";
 import WaveformErrorBoundary from "../audio/WaveformErrorBoundary";
 import SelectionInfo from "./SelectionInfo";
@@ -10,7 +9,6 @@ import OperationPanel from "./OperationPanel";
 export default function ChannelEditor() {
   const channelEdit = useEditorStore((s) => s.channelEdit);
   const setActiveChannel = useEditorStore((s) => s.setActiveChannel);
-  const updateChannelAsset = useEditorStore((s) => s.updateChannelAsset);
   const exitChannelEdit = useEditorStore((s) => s.exitChannelEdit);
   const pushAsset = useEditorStore((s) => s.pushAsset);
   const setProcessing = useEditorStore((s) => s.setProcessing);
@@ -21,7 +19,6 @@ export default function ChannelEditor() {
   if (!channelEdit) return null;
 
   const { leftAsset, rightAsset, activeChannel } = channelEdit;
-  const activeAsset = activeChannel === "left" ? leftAsset : rightAsset;
 
   const handleMerge = async () => {
     setIsMerging(true);

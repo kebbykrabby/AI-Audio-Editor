@@ -1,9 +1,29 @@
 import { useCallback, useRef, useState, type DragEvent } from "react";
 import { uploadAudio, pollUntilReady } from "../api/assets";
+import { ApiRequestError } from "../api/client";
 import { useEditorStore } from "../store/editorStore";
 
 const MAX_SIZE = 100 * 1024 * 1024;
 const ACCEPTED = [".wav", ".mp3"];
+
+// Map backend error codes to friendlier messages. Falls back to the server message.
+function friendlyMessage(err: unknown): string {
+  if (err instanceof ApiRequestError) {
+    switch (err.code) {
+      case "PROCESSING_TIMEOUT":
+        return "Processing is taking longer than expected. Try a smaller file.";
+      case "INVALID_FILE":
+        return err.message || "The file format isn't supported.";
+      case "SERVER_RESTART":
+        return "The server restarted while processing your file. Please try again.";
+      case "PROCESSING_FAILED":
+        return err.message || "Processing failed. The file may be corrupted.";
+      default:
+        return err.message;
+    }
+  }
+  return err instanceof Error ? err.message : "Upload failed";
+}
 
 export default function UploadZone() {
   const [dragOver, setDragOver] = useState(false);
@@ -33,9 +53,9 @@ export default function UploadZone() {
       const asset = await pollUntilReady(assetId);
       if (thisUpload !== uploadIdRef.current) return; // stale upload
       setAssetReady(asset);
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (thisUpload !== uploadIdRef.current) return;
-      setError(e.message || "Upload failed");
+      setError(friendlyMessage(e));
     } finally {
       if (thisUpload === uploadIdRef.current) setUploading(false);
     }

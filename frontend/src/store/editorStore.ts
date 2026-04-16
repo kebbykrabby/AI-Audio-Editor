@@ -1,6 +1,29 @@
 import { create } from "zustand";
 import type { Asset, Selection } from "./types";
 
+const STORAGE_KEY = "audioEditor.currentAssetId";
+
+function persistCurrentAssetId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(STORAGE_KEY, id);
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // localStorage unavailable (private mode, quota) — fail silently
+  }
+}
+
+export function readPersistedAssetId(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function clearPersistedAssetId(): void {
+  persistCurrentAssetId(null);
+}
+
 interface ChannelEditState {
   leftAsset: Asset;
   rightAsset: Asset;
@@ -71,6 +94,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setAssetReady: (asset) => {
     set({ assetHistory: [asset], currentIndex: 0, error: null, warning: null });
+    persistCurrentAssetId(asset.assetId);
   },
 
   pushAsset: (asset, durationChanged) => {
@@ -90,6 +114,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selection: durationChanged ? null : get().selection,
       warning: null,
     });
+    persistCurrentAssetId(asset.assetId);
   },
 
   undo: () => {
@@ -97,7 +122,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (currentIndex > 0) {
       const newIndex = currentIndex - 1;
       set({ currentIndex: newIndex, selection: null, warning: null });
-      }
+      persistCurrentAssetId(assetHistory[newIndex].assetId);
+    }
   },
 
   redo: () => {
@@ -105,7 +131,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (currentIndex < assetHistory.length - 1) {
       const newIndex = currentIndex + 1;
       set({ currentIndex: newIndex, selection: null, warning: null });
-      }
+      persistCurrentAssetId(assetHistory[newIndex].assetId);
+    }
   },
 
   setSelection: (sel) => set({ selection: sel }),
@@ -157,5 +184,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       warning: null,
       channelEdit: null,
     });
+    clearPersistedAssetId();
   },
 }));

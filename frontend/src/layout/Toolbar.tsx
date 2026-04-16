@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useEditorStore } from "../store/editorStore";
-import { exportAudio } from "../api/export";
+import ExportPopover from "./ExportPopover";
 
 export default function Toolbar() {
   const asset = useEditorStore((s) => s.currentAsset());
@@ -11,9 +11,7 @@ export default function Toolbar() {
   const reset = useEditorStore((s) => s.reset);
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const isPlaying = useEditorStore((s) => s.isPlaying);
-  const setError = useEditorStore((s) => s.setError);
   const channelEdit = useEditorStore((s) => s.channelEdit);
-  const [isExporting, setIsExporting] = useState(false);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -30,31 +28,13 @@ export default function Toolbar() {
         e.preventDefault();
         if (canRedo) redo();
       }
-      if (e.code === "Escape") {
+      if (e.code === "Escape" && !isInputFocused()) {
         useEditorStore.getState().setSelection(null);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [isPlaying, canUndo, canRedo]);
-
-  const handleExport = async (format: "wav" | "mp3") => {
-    if (!asset || isExporting) return;
-    setIsExporting(true);
-    try {
-      const res = await exportAudio(asset.assetId, format);
-      const a = document.createElement("a");
-      a.href = res.downloadUrl;
-      a.download = `export.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Export failed");
-    } finally {
-      setIsExporting(false);
-    }
-  };
+  }, [isPlaying, canUndo, canRedo, undo, redo, setPlaying]);
 
   if (!asset) return null;
 
@@ -95,20 +75,7 @@ export default function Toolbar() {
           Redo
         </button>
         <div className="w-px h-6 bg-slate-600 mx-1" />
-        <button
-          onClick={() => handleExport("wav")}
-          disabled={isExporting || !!channelEdit}
-          className="toolbar-btn"
-        >
-          {isExporting ? "Exporting..." : "Export WAV"}
-        </button>
-        <button
-          onClick={() => handleExport("mp3")}
-          disabled={isExporting || !!channelEdit}
-          className="toolbar-btn"
-        >
-          {isExporting ? "Exporting..." : "Export MP3"}
-        </button>
+        <ExportPopover />
       </div>
     </div>
   );
