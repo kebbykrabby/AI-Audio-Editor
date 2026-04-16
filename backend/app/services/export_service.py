@@ -23,7 +23,10 @@ async def export_audio(
         raise OperationError("PROCESSING_FAILED", "Audio file not found")
 
     output_path = storage.get_export_path(asset_id, fmt)
-    await ffmpeg_proc.export_audio(input_path, output_path, fmt, sample_rate, bitrate_kbps)
+    try:
+        await ffmpeg_proc.export_audio(input_path, output_path, fmt, sample_rate, bitrate_kbps)
+    except RuntimeError as e:
+        raise OperationError("EXPORT_FAILED", f"Export encoding failed: {str(e)[:200]}")
 
     return {
         "downloadUrl": f"/files/{asset_id}/export.{fmt}",

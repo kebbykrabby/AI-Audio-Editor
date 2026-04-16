@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -76,14 +76,22 @@ async def get_asset(asset_id: str, db: AsyncSession = Depends(get_db)):
 @router.get("/{asset_id}/audio")
 async def stream_audio(asset_id: str, db: AsyncSession = Depends(get_db)):
     asset = await asset_service.get_asset(db, asset_id)
-    if not asset or asset.status != "ready":
-        raise HTTPException(status_code=404, detail="Asset not found or not ready")
+    if not asset:
+        return JSONResponse(status_code=404, content={
+            "error": {"code": "ASSET_NOT_FOUND", "message": f"Asset {asset_id} not found"}
+        })
+    if asset.status != "ready":
+        return JSONResponse(status_code=404, content={
+            "error": {"code": "ASSET_NOT_READY", "message": f"Asset {asset_id} is not ready"}
+        })
 
     audio_path = storage.get_audio_path(asset_id)
     if not audio_path or not audio_path.exists():
         audio_path = storage.get_original_path(asset_id)
     if not audio_path or not audio_path.exists():
-        raise HTTPException(status_code=404, detail="Audio file not found")
+        return JSONResponse(status_code=404, content={
+            "error": {"code": "ASSET_NOT_FOUND", "message": "Audio file not found on disk"}
+        })
 
     media_type = "audio/wav" if audio_path.suffix == ".wav" else "audio/mpeg"
     return FileResponse(
