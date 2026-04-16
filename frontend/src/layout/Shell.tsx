@@ -5,6 +5,7 @@ import WaveformPlayer from "../audio/WaveformPlayer";
 import WaveformErrorBoundary from "../audio/WaveformErrorBoundary";
 import SelectionInfo from "../editor/SelectionInfo";
 import OperationPanel from "../editor/OperationPanel";
+import ChannelEditor from "../editor/ChannelEditor";
 
 export default function Shell() {
   const asset = useEditorStore((s) => s.currentAsset());
@@ -13,6 +14,7 @@ export default function Shell() {
   const isProcessing = useEditorStore((s) => s.isProcessing);
   const setError = useEditorStore((s) => s.setError);
   const setWarning = useEditorStore((s) => s.setWarning);
+  const channelEdit = useEditorStore((s) => s.channelEdit);
 
   if (!asset || asset.status !== "ready") {
     return <UploadZone />;
@@ -45,11 +47,17 @@ export default function Shell() {
 
       {/* Editor area */}
       <div className="flex-1 p-4 space-y-4">
-        <WaveformErrorBoundary onReset={() => setError(null)}>
-          <WaveformPlayer />
-        </WaveformErrorBoundary>
-        <SelectionInfo />
-        <OperationPanel />
+        {channelEdit ? (
+          <ChannelEditor />
+        ) : (
+          <>
+            <WaveformErrorBoundary onReset={() => setError(null)}>
+              <WaveformPlayer />
+            </WaveformErrorBoundary>
+            <SelectionInfo />
+            <OperationPanel />
+          </>
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import asyncio
 import json
-import struct
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -15,18 +15,23 @@ async def generate_waveform(audio_path: Path, num_peaks: int = 1800) -> Path:
     """
     waveform_path = audio_path.parent / "waveform.json"
 
-    # Decode to raw 16-bit signed LE PCM via FFmpeg
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-i", str(audio_path),
-        "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "1",
-        "-ar", "22050", "-",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    raw_data, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+    def _decode():
+        return subprocess.run(
+            ["ffmpeg", "-i", str(audio_path),
+             "-f", "s16le", "-acodec", "pcm_s16le", "-ac", "1",
+             "-ar", "22050", "-"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
 
-    if proc.returncode != 0:
-        raise RuntimeError(f"FFmpeg waveform decode failed: {stderr.decode()}")
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _decode)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg waveform decode failed: {result.stderr.decode()}")
+
+    raw_data = result.stdout
 
     if not raw_data:
         waveform_path.write_text(json.dumps([]))
