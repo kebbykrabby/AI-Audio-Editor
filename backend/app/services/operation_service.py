@@ -1,152 +1,305 @@
 import asyncio
 import logging
-import uuid
+import shutil
+import tempfile
+from datetime import datetime
 from pathlib import Path
 
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
+from app.core.errors import DomainError
 from app.models.asset import Asset
 from app.models.operation import Operation
+from app.models.user import User
 from app.processors import analysis, ffmpeg as ffmpeg_proc
 from app.processors.waveform import generate_waveform
-from app.storage.local import storage
+from app.schemas.error import ErrorBody
+from app.schemas.operation import OperationResponse
+from app.services.asset_service import build_asset_response
+from app.storage import Storage, get_storage
+from app.storage.base import ObjectNotFound
+from app.workers.recovery import worker_id
 
 logger = logging.getLogger(__name__)
 
 
-def _new_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:12]}"
-
-
-class OperationError(Exception):
-    def __init__(self, code: str, message: str, field: str | None = None,
-                 constraint: str | None = None, received: float | str | None = None):
-        self.code = code
-        self.message = message
+class OperationError(DomainError):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        field: str | None = None,
+        constraint: str | None = None,
+        received: float | str | None = None,
+    ) -> None:
+        super().__init__(code, message)
         self.field = field
         self.constraint = constraint
         self.received = received
 
 
-async def execute_operation(
-    db: AsyncSession, op_type: str, input_asset_id: str, parameters: dict,
-) -> tuple[Operation, Asset, Asset | None]:
-    # 1. Fetch and validate input asset
+CHANNEL_STRICT_OPS = {"extract_channel", "swap_channels", "split_channels", "mono_mixdown"}
+
+
+def _audio_key(user_id: str, asset_id: str) -> str:
+    return f"users/{user_id}/assets/{asset_id}/audio.wav"
+
+
+def _waveform_key(user_id: str, asset_id: str) -> str:
+    return f"users/{user_id}/assets/{asset_id}/waveform.json"
+
+
+# ---------- API side (async SQLAlchemy) ----------
+
+
+async def enqueue_operation(
+    db: AsyncSession,
+    user: User,
+    input_asset_id: str,
+    op_type: str,
+    parameters: dict,
+) -> Operation:
     input_asset = await db.get(Asset, input_asset_id)
-    if not input_asset:
+    if input_asset is None or input_asset.user_id != user.id:
         raise OperationError("ASSET_NOT_FOUND", f"Asset {input_asset_id} not found")
     if input_asset.status != "ready":
         raise OperationError("ASSET_NOT_READY", f"Asset {input_asset_id} is not ready")
 
-    # Channel-aware validation
     channels = input_asset.channels or 1
-    if op_type in ("extract_channel", "swap_channels", "split_channels") and channels < 2:
+    if op_type in CHANNEL_STRICT_OPS and channels < 2:
         raise OperationError(
-            "INVALID_PARAMETERS", f"{op_type} requires stereo audio (2 channels)",
-            field="channels", constraint="must be >= 2", received=channels,
-        )
-    if op_type == "mono_mixdown" and channels < 2:
-        raise OperationError(
-            "INVALID_PARAMETERS", "mono_mixdown requires stereo audio (2 channels)",
-            field="channels", constraint="must be >= 2", received=channels,
+            "INVALID_PARAMETERS",
+            f"{op_type} requires stereo audio (2 channels)",
+            field="channels",
+            constraint="must be >= 2",
+            received=channels,
         )
 
-    duration = input_asset.duration_sec or 0
+    _validate_params(op_type, parameters, input_asset.duration_sec or 0)
 
-    # 2. Cross-field validation
-    _validate_params(op_type, parameters, duration)
-
-    # 3. Resolve input audio path
-    input_path = storage.get_audio_path(input_asset_id)
-    if not input_path or not input_path.exists():
-        input_path = storage.get_original_path(input_asset_id)
-    if not input_path:
-        raise OperationError("PROCESSING_FAILED", "Input audio file not found")
-
-    # Special case: split_channels (1 input → 2 outputs)
-    if op_type == "split_channels":
-        return await _execute_split_channels(db, input_asset, input_path)
-
-    # Special case: merge_channels (2 inputs → 1 output)
+    # For merge_channels, verify the right_asset is owned by the same user + ready.
     if op_type == "merge_channels":
-        return await _execute_merge_channels(db, input_asset, input_path, parameters)
+        right_id = parameters.get("right_asset_id")
+        right = await db.get(Asset, right_id) if right_id else None
+        if right is None or right.user_id != user.id:
+            raise OperationError("ASSET_NOT_FOUND", f"Right channel asset {right_id} not found")
+        if right.status != "ready":
+            raise OperationError("ASSET_NOT_READY", f"Right channel asset {right_id} is not ready")
 
-    # 4. Prepare output
-    output_asset_id = _new_id("ast")
-    op_id = _new_id("op")
-    output_dir = Path(storage.root) / output_asset_id
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "audio.wav"
-
-    # 5. Execute processor with 30s timeout
-    try:
-        result = await asyncio.wait_for(
-            _dispatch(op_type, input_path, output_path, parameters, duration),
-            timeout=30,
-        )
-    except asyncio.TimeoutError:
-        raise OperationError("PROCESSING_TIMEOUT", "Operation exceeded 30 second timeout")
-    except RuntimeError as e:
-        raise OperationError("PROCESSING_FAILED", str(e))
-
-    # 6. Generate waveform for output
-    await generate_waveform(output_path)
-
-    # 7. Probe output for metadata
-    out_info = await ffmpeg_proc.probe_audio(output_path)
-
-    # 8. Create DB records
-    output_asset = Asset(
-        id=output_asset_id,
-        type="derived",
-        status="ready",
-        parent_asset_id=input_asset_id,
-        filename=input_asset.filename,
-        duration_sec=out_info["duration_sec"],
-        sample_rate=out_info["sample_rate"],
-        channels=out_info["channels"],
-    )
     operation = Operation(
-        id=op_id,
+        user_id=user.id,
         type=op_type,
         input_asset_id=input_asset_id,
-        output_asset_id=output_asset_id,
         parameters=parameters,
-        status="completed",
-        warning=result.warning,
+        status="queued",
     )
-    db.add(output_asset)
     db.add(operation)
     await db.commit()
-    await db.refresh(output_asset)
     await db.refresh(operation)
 
-    return operation, output_asset, None
+    # Lazy import to avoid circular (services -> workers -> services).
+    from app.workers.operation_worker import run_operation_actor
+    run_operation_actor.send(operation.id)
+
+    return operation
 
 
-async def _execute_split_channels(
-    db: AsyncSession, input_asset: Asset, input_path: Path,
-) -> tuple[Operation, Asset, Asset]:
-    left_id = _new_id("ast")
-    right_id = _new_id("ast")
-    op_id = _new_id("op")
+async def get_operation_for_user(
+    db: AsyncSession, operation_id: str, user_id: str
+) -> Operation | None:
+    op = await db.get(Operation, operation_id)
+    if op is None or op.user_id != user_id:
+        return None
+    return op
 
-    left_dir = Path(storage.root) / left_id
-    right_dir = Path(storage.root) / right_id
-    left_dir.mkdir(parents=True, exist_ok=True)
-    right_dir.mkdir(parents=True, exist_ok=True)
-    left_path = left_dir / "audio.wav"
-    right_path = right_dir / "audio.wav"
 
-    try:
-        result = await asyncio.wait_for(
-            ffmpeg_proc.split_channels(input_path, left_path, right_path),
-            timeout=30,
+async def build_operation_response(
+    db: AsyncSession, op: Operation
+) -> OperationResponse:
+    asset_resp = None
+    secondary_resp = None
+    if op.status == "completed":
+        if op.output_asset_id:
+            out = await db.get(Asset, op.output_asset_id)
+            if out is not None:
+                asset_resp = await build_asset_response(out)
+        if op.secondary_output_asset_id:
+            secondary = await db.get(Asset, op.secondary_output_asset_id)
+            if secondary is not None:
+                secondary_resp = await build_asset_response(secondary)
+
+    error = None
+    if op.status in ("failed", "cancelled") and op.error_code:
+        error = ErrorBody(code=op.error_code, message=op.error_message or "Operation failed")
+
+    return OperationResponse(
+        operationId=op.id,
+        status=op.status,
+        warning=op.warning,
+        asset=asset_resp,
+        secondaryAsset=secondary_resp,
+        error=error,
+    )
+
+
+# ---------- Worker side (sync SQLAlchemy) ----------
+
+
+def run_operation_job(db: Session, operation_id: str) -> None:
+    asyncio.run(_run_operation_job_async(db, operation_id))
+
+
+async def _run_operation_job_async(db: Session, operation_id: str) -> None:
+    # Optimistic transition queued -> running (avoids duplicate runs).
+    now = datetime.utcnow()
+    wid = worker_id()
+    res = db.execute(
+        update(Operation)
+        .where(
+            Operation.id == operation_id,
+            Operation.status.in_(["queued", "running"]),
         )
-    except asyncio.TimeoutError:
-        raise OperationError("PROCESSING_TIMEOUT", "Operation exceeded 30 second timeout")
-    except RuntimeError as e:
-        raise OperationError("PROCESSING_FAILED", str(e))
+        .values(
+            status="running",
+            started_at=now,
+            worker_id=wid,
+            attempt_count=Operation.attempt_count + 1,
+            updated_at=now,
+        )
+    )
+    db.commit()
+    if (res.rowcount or 0) == 0:
+        logger.info("Operation %s already in terminal state; skipping", operation_id)
+        return
+
+    op = db.get(Operation, operation_id)
+    if op is None:
+        return
+
+    storage = get_storage()
+    work_dir = Path(tempfile.mkdtemp(prefix=f"op_{operation_id[:8]}_"))
+    try:
+        input_asset = db.get(Asset, op.input_asset_id)
+        if input_asset is None:
+            raise OperationError("ASSET_NOT_FOUND", "Input asset not found")
+        if input_asset.storage_key is None:
+            raise OperationError("ASSET_NOT_READY", "Input asset has no storage key")
+
+        ext = Path(input_asset.storage_key).suffix or ".wav"
+        input_path = work_dir / f"input{ext}"
+        try:
+            await storage.download_to_path(input_asset.storage_key, input_path)
+        except ObjectNotFound:
+            raise OperationError("PROCESSING_FAILED", "Input audio missing in storage")
+
+        duration = input_asset.duration_sec or 0.0
+
+        if op.type == "split_channels":
+            await _run_split(db, op, input_asset, input_path, work_dir, storage)
+        elif op.type == "merge_channels":
+            await _run_merge(db, op, input_asset, input_path, work_dir, storage)
+        else:
+            await _run_single_output(db, op, input_asset, input_path, work_dir, storage, duration)
+    except OperationError as e:
+        db.rollback()
+        op = db.get(Operation, operation_id)
+        if op is not None:
+            op.status = "failed"
+            op.error_code = e.code
+            op.error_message = e.message[:500]
+            op.completed_at = datetime.utcnow()
+            op.updated_at = op.completed_at
+            db.commit()
+    except DomainError as e:
+        db.rollback()
+        op = db.get(Operation, operation_id)
+        if op is not None:
+            op.status = "failed"
+            op.error_code = e.code
+            op.error_message = e.message[:500]
+            op.completed_at = datetime.utcnow()
+            op.updated_at = op.completed_at
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.exception("Operation %s crashed", operation_id)
+        op = db.get(Operation, operation_id)
+        if op is not None:
+            op.status = "failed"
+            op.error_code = "PROCESSING_FAILED"
+            op.error_message = str(e)[:500]
+            op.completed_at = datetime.utcnow()
+            op.updated_at = op.completed_at
+            db.commit()
+        raise  # surface to Dramatiq so transient errors are retried
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+async def _run_single_output(
+    db: Session,
+    op: Operation,
+    input_asset: Asset,
+    input_path: Path,
+    work_dir: Path,
+    storage: Storage,
+    duration: float,
+) -> None:
+    output_path = work_dir / "output.wav"
+    result = await _dispatch_async(op.type, input_path, output_path, op.parameters, duration)
+
+    await generate_waveform(output_path)
+    wf_local = output_path.parent / "waveform.json"
+    if not wf_local.exists():
+        candidates = list(output_path.parent.glob("*.json"))
+        if candidates:
+            wf_local = candidates[0]
+
+    info = await ffmpeg_proc.probe_audio(output_path)
+
+    output_asset = Asset(
+        user_id=op.user_id,
+        type="derived",
+        status="ready",
+        parent_asset_id=input_asset.id,
+        filename=input_asset.filename,
+        mime_type="audio/wav",
+        duration_sec=info["duration_sec"],
+        sample_rate=info["sample_rate"],
+        channels=info["channels"],
+    )
+    db.add(output_asset)
+    db.flush()
+
+    audio_key = _audio_key(op.user_id, output_asset.id)
+    wf_key = _waveform_key(op.user_id, output_asset.id)
+    await storage.put_file(audio_key, output_path, "audio/wav")
+    await storage.put_file(wf_key, wf_local, "application/json")
+
+    output_asset.storage_key = audio_key
+    output_asset.waveform_key = wf_key
+
+    op.status = "completed"
+    op.output_asset_id = output_asset.id
+    op.warning = result.warning
+    op.completed_at = datetime.utcnow()
+    op.updated_at = op.completed_at
+    db.commit()
+
+
+async def _run_split(
+    db: Session,
+    op: Operation,
+    input_asset: Asset,
+    input_path: Path,
+    work_dir: Path,
+    storage: Storage,
+) -> None:
+    left_path = work_dir / "left.wav"
+    right_path = work_dir / "right.wav"
+    result = await ffmpeg_proc.split_channels(input_path, left_path, right_path)
 
     await generate_waveform(left_path)
     await generate_waveform(right_path)
@@ -154,127 +307,160 @@ async def _execute_split_channels(
     right_info = await ffmpeg_proc.probe_audio(right_path)
 
     left_asset = Asset(
-        id=left_id, type="derived", status="ready",
-        parent_asset_id=input_asset.id, filename=input_asset.filename,
+        user_id=op.user_id,
+        type="derived",
+        status="ready",
+        parent_asset_id=input_asset.id,
+        filename=input_asset.filename,
+        mime_type="audio/wav",
         duration_sec=left_info["duration_sec"],
-        sample_rate=left_info["sample_rate"], channels=left_info["channels"],
+        sample_rate=left_info["sample_rate"],
+        channels=left_info["channels"],
     )
     right_asset = Asset(
-        id=right_id, type="derived", status="ready",
-        parent_asset_id=input_asset.id, filename=input_asset.filename,
+        user_id=op.user_id,
+        type="derived",
+        status="ready",
+        parent_asset_id=input_asset.id,
+        filename=input_asset.filename,
+        mime_type="audio/wav",
         duration_sec=right_info["duration_sec"],
-        sample_rate=right_info["sample_rate"], channels=right_info["channels"],
+        sample_rate=right_info["sample_rate"],
+        channels=right_info["channels"],
     )
-    operation = Operation(
-        id=op_id, type="split_channels",
-        input_asset_id=input_asset.id, output_asset_id=left_id,
-        parameters={"right_asset_id": right_id},
-        status="completed", warning=result.warning,
-    )
-    db.add(left_asset)
-    db.add(right_asset)
-    db.add(operation)
-    await db.commit()
-    await db.refresh(left_asset)
-    await db.refresh(right_asset)
-    await db.refresh(operation)
+    db.add_all([left_asset, right_asset])
+    db.flush()
 
-    return operation, left_asset, right_asset
+    l_audio = _audio_key(op.user_id, left_asset.id)
+    r_audio = _audio_key(op.user_id, right_asset.id)
+    l_wf = _waveform_key(op.user_id, left_asset.id)
+    r_wf = _waveform_key(op.user_id, right_asset.id)
+    l_wf_local = left_path.parent / (left_path.stem + ".waveform.json")
+    r_wf_local = right_path.parent / (right_path.stem + ".waveform.json")
+    if not l_wf_local.exists():
+        l_wf_local = left_path.parent / "waveform.json"
+    if not r_wf_local.exists():
+        r_wf_local = right_path.parent / "waveform.json"
+
+    await storage.put_file(l_audio, left_path, "audio/wav")
+    await storage.put_file(r_audio, right_path, "audio/wav")
+    if l_wf_local.exists():
+        await storage.put_file(l_wf, l_wf_local, "application/json")
+    if r_wf_local.exists():
+        await storage.put_file(r_wf, r_wf_local, "application/json")
+
+    left_asset.storage_key = l_audio
+    left_asset.waveform_key = l_wf
+    right_asset.storage_key = r_audio
+    right_asset.waveform_key = r_wf
+
+    op.status = "completed"
+    op.output_asset_id = left_asset.id
+    op.secondary_output_asset_id = right_asset.id
+    op.warning = result.warning
+    op.completed_at = datetime.utcnow()
+    op.updated_at = op.completed_at
+    db.commit()
 
 
-async def _execute_merge_channels(
-    db: AsyncSession, left_asset: Asset, left_path: Path, parameters: dict,
-) -> tuple[Operation, Asset, None]:
-    right_asset_id = parameters["right_asset_id"]
-    right_asset = await db.get(Asset, right_asset_id)
-    if not right_asset:
-        raise OperationError("ASSET_NOT_FOUND", f"Right channel asset {right_asset_id} not found")
-    if right_asset.status != "ready":
-        raise OperationError("ASSET_NOT_READY", f"Right channel asset {right_asset_id} is not ready")
+async def _run_merge(
+    db: Session,
+    op: Operation,
+    left_asset: Asset,
+    left_path: Path,
+    work_dir: Path,
+    storage: Storage,
+) -> None:
+    right_id = op.parameters.get("right_asset_id")
+    right_asset = db.get(Asset, right_id) if right_id else None
+    if right_asset is None or right_asset.user_id != op.user_id:
+        raise OperationError("ASSET_NOT_FOUND", "Right channel asset not found")
+    if right_asset.status != "ready" or right_asset.storage_key is None:
+        raise OperationError("ASSET_NOT_READY", "Right channel asset is not ready")
 
-    right_path = storage.get_audio_path(right_asset_id)
-    if not right_path or not right_path.exists():
-        right_path = storage.get_original_path(right_asset_id)
-    if not right_path:
-        raise OperationError("PROCESSING_FAILED", "Right channel audio file not found")
-
-    output_id = _new_id("ast")
-    op_id = _new_id("op")
-    output_dir = Path(storage.root) / output_id
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "audio.wav"
-
+    right_path = work_dir / f"right{Path(right_asset.storage_key).suffix or '.wav'}"
     try:
-        result = await asyncio.wait_for(
-            ffmpeg_proc.merge_channels(left_path, right_path, output_path),
-            timeout=30,
-        )
-    except asyncio.TimeoutError:
-        raise OperationError("PROCESSING_TIMEOUT", "Operation exceeded 30 second timeout")
-    except RuntimeError as e:
-        raise OperationError("PROCESSING_FAILED", str(e))
+        await storage.download_to_path(right_asset.storage_key, right_path)
+    except ObjectNotFound:
+        raise OperationError("PROCESSING_FAILED", "Right channel audio missing in storage")
+
+    output_path = work_dir / "output.wav"
+    result = await ffmpeg_proc.merge_channels(left_path, right_path, output_path)
 
     await generate_waveform(output_path)
-    out_info = await ffmpeg_proc.probe_audio(output_path)
+    wf_local = output_path.parent / "waveform.json"
+    info = await ffmpeg_proc.probe_audio(output_path)
 
     output_asset = Asset(
-        id=output_id, type="derived", status="ready",
-        parent_asset_id=left_asset.id, filename=left_asset.filename,
-        duration_sec=out_info["duration_sec"],
-        sample_rate=out_info["sample_rate"], channels=out_info["channels"],
-    )
-    operation = Operation(
-        id=op_id, type="merge_channels",
-        input_asset_id=left_asset.id, output_asset_id=output_id,
-        parameters=parameters,
-        status="completed", warning=result.warning,
+        user_id=op.user_id,
+        type="derived",
+        status="ready",
+        parent_asset_id=left_asset.id,
+        filename=left_asset.filename,
+        mime_type="audio/wav",
+        duration_sec=info["duration_sec"],
+        sample_rate=info["sample_rate"],
+        channels=info["channels"],
     )
     db.add(output_asset)
-    db.add(operation)
-    await db.commit()
-    await db.refresh(output_asset)
-    await db.refresh(operation)
+    db.flush()
 
-    return operation, output_asset, None
+    audio_key = _audio_key(op.user_id, output_asset.id)
+    wf_key = _waveform_key(op.user_id, output_asset.id)
+    await storage.put_file(audio_key, output_path, "audio/wav")
+    if wf_local.exists():
+        await storage.put_file(wf_key, wf_local, "application/json")
+
+    output_asset.storage_key = audio_key
+    output_asset.waveform_key = wf_key
+
+    op.status = "completed"
+    op.output_asset_id = output_asset.id
+    op.warning = result.warning
+    op.completed_at = datetime.utcnow()
+    op.updated_at = op.completed_at
+    db.commit()
 
 
-async def _dispatch(
-    op_type: str, input_path: Path, output_path: Path,
-    params: dict, duration: float,
-) -> ffmpeg_proc.ProcessingResult:
+async def _dispatch_async(
+    op_type: str,
+    input_path: Path,
+    output_path: Path,
+    params: dict,
+    duration: float,
+):
     if op_type == "trim":
         return await ffmpeg_proc.trim(input_path, output_path, params["start_sec"], params["end_sec"])
-    elif op_type == "delete":
+    if op_type == "delete":
         return await ffmpeg_proc.delete(input_path, output_path, params["start_sec"], params["end_sec"])
-    elif op_type == "fade_in":
+    if op_type == "fade_in":
         return await ffmpeg_proc.fade_in(input_path, output_path, params["duration_sec"], params.get("curve", "linear"))
-    elif op_type == "fade_out":
+    if op_type == "fade_out":
         return await ffmpeg_proc.fade_out(input_path, output_path, params["duration_sec"], duration, params.get("curve", "linear"))
-    elif op_type == "gain":
+    if op_type == "gain":
         return await ffmpeg_proc.gain(input_path, output_path, params["gain_db"])
-    elif op_type == "normalize":
-        # Peak detection via FFmpeg astats, then apply gain
+    if op_type == "normalize":
         peak_db = await analysis.detect_peak_db(input_path)
         needed_gain = params["target_db"] - peak_db
         return await ffmpeg_proc.gain(input_path, output_path, needed_gain)
-    elif op_type == "reverse":
+    if op_type == "reverse":
         return await ffmpeg_proc.reverse(input_path, output_path)
-    elif op_type == "remove_silence":
+    if op_type == "remove_silence":
         return await ffmpeg_proc.remove_silence(
-            input_path, output_path,
+            input_path,
+            output_path,
             params.get("threshold_db", -40),
             params.get("min_silence_sec", 0.5),
         )
-    elif op_type == "extract_channel":
+    if op_type == "extract_channel":
         return await ffmpeg_proc.extract_channel(input_path, output_path, params["channel"])
-    elif op_type == "swap_channels":
+    if op_type == "swap_channels":
         return await ffmpeg_proc.swap_channels(input_path, output_path)
-    elif op_type == "mono_mixdown":
+    if op_type == "mono_mixdown":
         return await ffmpeg_proc.mono_mixdown(input_path, output_path)
-    elif op_type == "speed":
+    if op_type == "speed":
         return await ffmpeg_proc.speed(input_path, output_path, params["factor"])
-    else:
-        raise OperationError("INVALID_OPERATION", f"Unknown operation: {op_type}")
+    raise OperationError("INVALID_OPERATION", f"Unknown operation: {op_type}")
 
 
 def _validate_params(op_type: str, params: dict, duration: float) -> None:
@@ -301,10 +487,10 @@ def _validate_params(op_type: str, params: dict, duration: float) -> None:
                 "INVALID_PARAMETERS", "delete range covers entire file; output would be empty",
                 field="end_sec", constraint="range must not cover entire file", received=end,
             )
-
     elif op_type in ("fade_in", "fade_out"):
         if params["duration_sec"] > duration:
             raise OperationError(
                 "INVALID_PARAMETERS", "fade duration exceeds audio duration",
-                field="duration_sec", constraint=f"must be <= {duration}", received=params["duration_sec"],
+                field="duration_sec", constraint=f"must be <= {duration}",
+                received=params["duration_sec"],
             )

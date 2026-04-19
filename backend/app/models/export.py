@@ -4,37 +4,32 @@ from datetime import datetime
 from sqlalchemy import ForeignKey, Index, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.database import JSON_COL, UUID_COL, Base
+from app.database import UUID_COL, Base
 
 
 def _uuid() -> str:
     return str(uuid.uuid4())
 
 
-class Operation(Base):
-    __tablename__ = "operations"
+class Export(Base):
+    __tablename__ = "exports"
     __table_args__ = (
-        Index("ix_operations_status_queued_at", "status", "queued_at"),
-        Index("ix_operations_user_created", "user_id", "created_at"),
+        Index("ix_exports_user_created", "user_id", "created_at"),
+        Index("ix_exports_status_queued_at", "status", "queued_at"),
     )
 
     id: Mapped[str] = mapped_column(UUID_COL, primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(
         UUID_COL, ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
-    type: Mapped[str] = mapped_column(String(40))
-    input_asset_id: Mapped[str] = mapped_column(
+    source_asset_id: Mapped[str] = mapped_column(
         UUID_COL, ForeignKey("assets.id"), index=True
     )
-    output_asset_id: Mapped[str | None] = mapped_column(
-        UUID_COL, ForeignKey("assets.id"), nullable=True, index=True
-    )
-    secondary_output_asset_id: Mapped[str | None] = mapped_column(
-        UUID_COL, ForeignKey("assets.id"), nullable=True
-    )
-    parameters: Mapped[dict] = mapped_column(JSON_COL, default=dict)
+    format: Mapped[str] = mapped_column(String(10))  # "wav" | "mp3"
+    sample_rate: Mapped[int | None] = mapped_column(nullable=True)
+    bitrate_kbps: Mapped[int | None] = mapped_column(nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="queued")
-    warning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempt_count: Mapped[int] = mapped_column(SmallInteger, default=0)

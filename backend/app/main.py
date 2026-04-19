@@ -4,15 +4,17 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, update
+from sqlalchemy import update
 
 from app.api.router import api_router
 from app.config import settings
 from app.database import Base, async_session, engine
 from app.models.asset import Asset
+from app.workers.recovery import recover_stale_running
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,9 +28,17 @@ MAX_BODY_BYTES = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 STALE_PROCESSING_MINUTES = 5
 
+_DEV_JWT_SECRET = "dev-only-insecure-secret-change-in-prod"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if settings.JWT_SECRET == _DEV_JWT_SECRET:
+        logger.warning(
+            "JWT_SECRET is set to the built-in dev default. "
+            "Set a strong JWT_SECRET in .env before deploying."
+        )
+
     # Create tables on startup (dev only; use Alembic in production)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -49,10 +59,43 @@ async def lifespan(app: FastAPI):
         if result.rowcount:
             logger.info("Recovered %d stale processing asset(s)", result.rowcount)
 
+        # Recover operations/exports whose worker crashed without cleaning up.
+        await recover_stale_running(db)
+
     yield
 
 
 app = FastAPI(title="AI Audio Editor", version="0.1.0", lifespan=lifespan)
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Convert FastAPI's default `{"detail": [...]}` Pydantic validation error
+    into the `{"error": {code, message, details}}` envelope the rest of the API
+    uses. Surfaces the first error's field, constraint, and input."""
+    errors = exc.errors()
+    details: dict = {}
+    if errors:
+        first = errors[0]
+        loc = first.get("loc", [])
+        # loc is like ("body", "password") or ("body", "parameters", "start_sec")
+        field_parts = [str(p) for p in loc if p != "body"]
+        if field_parts:
+            details["field"] = ".".join(field_parts)
+        if first.get("msg"):
+            details["constraint"] = first["msg"]
+        if "input" in first:
+            details["received"] = first["input"]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "INVALID_PARAMETERS",
+                "message": "Request validation failed",
+                "details": details,
+            }
+        },
+    )
 
 
 # Reject oversized request bodies early via Content-Length header
