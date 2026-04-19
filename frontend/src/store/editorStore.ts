@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Asset, Selection } from "./types";
 
 const STORAGE_KEY = "audioEditor.currentAssetId";
+const PENDING_OP_KEY = "audioEditor.pendingOperation";
 
 function persistCurrentAssetId(id: string | null): void {
   try {
@@ -24,6 +25,38 @@ export function clearPersistedAssetId(): void {
   persistCurrentAssetId(null);
 }
 
+export interface PendingOperation {
+  operationId: string;
+  type: string;
+  inputAssetId: string;
+  startedAt: number;
+}
+
+function persistPendingOp(op: PendingOperation | null): void {
+  try {
+    if (op) localStorage.setItem(PENDING_OP_KEY, JSON.stringify(op));
+    else localStorage.removeItem(PENDING_OP_KEY);
+  } catch {
+    // fail silently
+  }
+}
+
+export function readPersistedPendingOp(): PendingOperation | null {
+  try {
+    const raw = localStorage.getItem(PENDING_OP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingOperation;
+    if (!parsed.operationId || !parsed.inputAssetId || !parsed.type) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPersistedPendingOp(): void {
+  persistPendingOp(null);
+}
+
 interface ChannelEditState {
   leftAsset: Asset;
   rightAsset: Asset;
@@ -39,6 +72,7 @@ interface EditorState {
   selection: Selection | null;
   isUploading: boolean;
   isProcessing: boolean;
+  pendingOperation: PendingOperation | null;
   error: string | null;
   warning: string | null;
   channelEdit: ChannelEditState | null;
@@ -49,6 +83,11 @@ interface EditorState {
 
   setAssetReady: (asset: Asset) => void;
   pushAsset: (asset: Asset, durationChanged: boolean) => void;
+  refreshAssetUrls: (
+    assetId: string,
+    audioUrl: string | null,
+    waveformUrl: string | null,
+  ) => void;
   undo: () => void;
   redo: () => void;
   setSelection: (sel: Selection | null) => void;
@@ -56,6 +95,7 @@ interface EditorState {
   setCurrentTime: (sec: number) => void;
   setUploading: (v: boolean) => void;
   setProcessing: (v: boolean) => void;
+  setPendingOperation: (op: PendingOperation | null) => void;
   setError: (msg: string | null) => void;
   setWarning: (msg: string | null) => void;
   enterChannelEdit: (originalAssetId: string, left: Asset, right: Asset) => void;
@@ -75,6 +115,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selection: null,
   isUploading: false,
   isProcessing: false,
+  pendingOperation: null,
   error: null,
   warning: null,
   channelEdit: null,
@@ -102,7 +143,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     let newHistory = assetHistory.slice(0, currentIndex + 1);
     newHistory.push(asset);
     let newIndex = newHistory.length - 1;
-    // Cap history to prevent unbounded memory growth
     if (newHistory.length > MAX_HISTORY) {
       const overflow = newHistory.length - MAX_HISTORY;
       newHistory = newHistory.slice(overflow);
@@ -115,6 +155,22 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       warning: null,
     });
     persistCurrentAssetId(asset.assetId);
+  },
+
+  refreshAssetUrls: (assetId, audioUrl, waveformUrl) => {
+    const { assetHistory, channelEdit } = get();
+    const patch = (a: Asset): Asset =>
+      a.assetId === assetId ? { ...a, audioUrl, waveformUrl } : a;
+
+    const nextHistory = assetHistory.map(patch);
+    const nextChannelEdit = channelEdit
+      ? {
+          ...channelEdit,
+          leftAsset: patch(channelEdit.leftAsset),
+          rightAsset: patch(channelEdit.rightAsset),
+        }
+      : null;
+    set({ assetHistory: nextHistory, channelEdit: nextChannelEdit });
   },
 
   undo: () => {
@@ -140,6 +196,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setCurrentTime: (sec) => set({ currentTimeSec: sec }),
   setUploading: (v) => set({ isUploading: v }),
   setProcessing: (v) => set({ isProcessing: v }),
+
+  setPendingOperation: (op) => {
+    persistPendingOp(op);
+    set({ pendingOperation: op, isProcessing: op !== null });
+  },
+
   setError: (msg) => set({ error: msg }),
   setWarning: (msg) => set({ warning: msg }),
 
@@ -180,10 +242,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       selection: null,
       isUploading: false,
       isProcessing: false,
+      pendingOperation: null,
       error: null,
       warning: null,
       channelEdit: null,
     });
     clearPersistedAssetId();
+    clearPersistedPendingOp();
   },
 }));

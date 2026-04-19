@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { executeOperation } from "../api/operations";
+import { enqueueOperation, pollOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
 import WaveformPlayer from "../audio/WaveformPlayer";
 import WaveformErrorBoundary from "../audio/WaveformErrorBoundary";
@@ -25,10 +25,11 @@ export default function ChannelEditor() {
     setProcessing(true);
     setError(null);
     try {
-      const res = await executeOperation("merge_channels", leftAsset.assetId, {
+      const queued = await enqueueOperation("merge_channels", leftAsset.assetId, {
         right_asset_id: rightAsset.assetId,
       });
-      pushAsset(res.asset, false);
+      const res = await pollOperation(queued.operationId);
+      if (res.asset) pushAsset(res.asset, false);
       exitChannelEdit();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Merge failed");

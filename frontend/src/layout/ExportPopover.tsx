@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { exportAudio } from "../api/export";
+import { enqueueExport, pollExport } from "../api/export";
 import { useEditorStore } from "../store/editorStore";
 import { ApiRequestError } from "../api/client";
 
@@ -54,7 +54,9 @@ export default function ExportPopover() {
     try {
       const sr = sampleRate === "source" ? undefined : sampleRate;
       const br = format === "mp3" ? bitrate : undefined;
-      const res = await exportAudio(asset.assetId, format, sr, br);
+      const { exportId } = await enqueueExport(asset.assetId, format, sr, br);
+      const res = await pollExport(exportId);
+      if (!res.downloadUrl) throw new ApiRequestError("EXPORT_FAILED", "Export completed without a download URL", 0);
       const a = document.createElement("a");
       a.href = res.downloadUrl;
       a.download = `export.${format}`;
