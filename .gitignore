@@ -41,3 +41,9 @@ test_tone.wav
 
 # Claude Code
 .claude/
+
+# Self documantation
+docs/
+
+
+
