@@ -1,27 +1,24 @@
-"""Verifies that export failures return the standard {error:{code,message}}
-shape rather than FastAPI's default 500 body.
+"""Export error-shape tests for the v2.5 contract.
 
-Covered regressions from the V2 review:
-- §3 + §5.4 export RuntimeError was not wrapped, producing a bare 500.
+Exports are now async: POST /assets/{id}/export returns 202 with exportId,
+polling GET /exports/{id} yields status. Validation errors (unknown asset,
+asset not ready, invalid format) are synchronous and use the standard
+{error: {code, message}} envelope.
 """
 from __future__ import annotations
 
-import time
-
 import pytest
 
-
-@pytest.fixture()
-def client(tmp_storage):
-    from fastapi.testclient import TestClient
-    from app.main import app
-    with TestClient(app) as c:
-        yield c
+from .conftest import drain_jobs_async
 
 
-def test_export_on_unknown_asset_returns_standard_error(client):
-    r = client.post(
+pytestmark = pytest.mark.asyncio
+
+
+async def test_export_on_unknown_asset_returns_standard_error(client, auth_user):
+    r = await client.post(
         "/api/assets/ast_missing/export",
+        headers=auth_user["headers"],
         json={"format": "wav"},
     )
     assert r.status_code == 404
@@ -31,52 +28,47 @@ def test_export_on_unknown_asset_returns_standard_error(client):
     assert "detail" not in body
 
 
-def test_export_on_processing_asset_returns_not_ready(client, stereo_music_wav):
-    """If the asset hasn't finished processing, export must return ASSET_NOT_READY (409)
-    with the standard error shape — not a bare 500.
-    """
+async def test_export_on_processing_asset_returns_not_ready(
+    client, stub_broker, auth_user, stereo_music_wav
+):
+    """If the asset is still processing (upload not drained), export must be
+    rejected synchronously with ASSET_NOT_READY (409)."""
     with open(stereo_music_wav, "rb") as f:
-        up = client.post(
+        up = await client.post(
             "/api/assets/upload",
+            headers=auth_user["headers"],
             files={"file": ("in.wav", f, "audio/wav")},
         )
     asset_id = up.json()["assetId"]
 
-    # Immediately attempt export before processing completes.
-    # There's a race window — if processing finished already, skip the assertion.
-    r = client.post(
+    # Don't drain — asset is in "processing" state.
+    r = await client.post(
         f"/api/assets/{asset_id}/export",
+        headers=auth_user["headers"],
         json={"format": "wav"},
     )
-    if r.status_code == 409:
-        body = r.json()
-        assert body["error"]["code"] == "ASSET_NOT_READY"
-        assert "detail" not in body
-    else:
-        # Processing was already done by the time we got here — just verify it's a
-        # well-shaped response either way.
-        assert r.status_code in (200, 409)
+    assert r.status_code == 409, f"expected 409, got {r.status_code}: {r.text}"
+    body = r.json()
+    assert body["error"]["code"] == "ASSET_NOT_READY"
+    assert "detail" not in body
 
 
-def test_export_invalid_format_returns_422_from_schema(client, stereo_music_wav):
-    """Schema-level validation for `format` must also use the standard error shape
-    (by way of FastAPI's 422 wrapper — but we don't assert the shape of FastAPI's
-    validation body since that's separate from our custom error envelope).
-    """
+async def test_export_invalid_format_returns_422_from_schema(
+    client, stub_broker, auth_user, stereo_music_wav
+):
+    """format='ogg' is outside Literal['wav', 'mp3'] → 422 at Pydantic layer."""
     with open(stereo_music_wav, "rb") as f:
-        up = client.post(
+        up = await client.post(
             "/api/assets/upload",
+            headers=auth_user["headers"],
             files={"file": ("in.wav", f, "audio/wav")},
         )
     asset_id = up.json()["assetId"]
-    for _ in range(20):
-        r = client.get(f"/api/assets/{asset_id}")
-        if r.json()["status"] == "ready":
-            break
-        time.sleep(0.5)
+    await drain_jobs_async(stub_broker)
 
-    r = client.post(
+    r = await client.post(
         f"/api/assets/{asset_id}/export",
-        json={"format": "ogg"},  # not in Literal["wav", "mp3"]
+        headers=auth_user["headers"],
+        json={"format": "ogg"},
     )
     assert r.status_code == 422

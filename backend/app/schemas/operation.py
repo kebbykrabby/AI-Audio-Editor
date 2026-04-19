@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from app.schemas.asset import AssetResponse
+from app.schemas.error import ErrorBody
 
 
 # --- Parameter models per operation type ---
@@ -163,7 +164,8 @@ OperationRequest = Annotated[
 
 class OperationResponse(BaseModel):
     operationId: str
-    status: str
+    status: str  # "queued" | "running" | "completed" | "failed" | "cancelled"
     warning: str | None = None
-    asset: AssetResponse
+    asset: AssetResponse | None = None
     secondaryAsset: AssetResponse | None = None
+    error: ErrorBody | None = None
