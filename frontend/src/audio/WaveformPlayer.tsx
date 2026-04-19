@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
 import { useEditorStore } from "../store/editorStore";
+import { useAssetUrlRefresh } from "./useAssetUrlRefresh";
 
 export default function WaveformPlayer() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -18,6 +19,11 @@ export default function WaveformPlayer() {
   const selection = useEditorStore((s) => s.selection);
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const currentTimeSec = useEditorStore((s) => s.currentTimeSec);
+
+  // Pre-emptive URL refresh so signed URLs don't expire mid-session.
+  // Also exposes refreshNow() for media-error recovery.
+  const { refreshNow } = useAssetUrlRefresh(asset?.assetId ?? null);
+  const recoveringRef = useRef(false);
 
   // Initialize WaveSurfer
   useEffect(() => {
@@ -58,6 +64,16 @@ export default function WaveformPlayer() {
     ws.on("play", () => setPlaying(true));
     ws.on("pause", () => setPlaying(false));
     ws.on("timeupdate", (time) => setCurrentTime(time));
+    // If the browser rejects the media (most likely a 403 from an expired
+    // signed URL), request a fresh asset. The store update rotates audioUrl,
+    // which re-triggers the init effect above and reloads WaveSurfer.
+    ws.on("error", () => {
+      if (recoveringRef.current) return;
+      recoveringRef.current = true;
+      void refreshNow().finally(() => {
+        recoveringRef.current = false;
+      });
+    });
 
     // Region selection
     regions.enableDragSelection({ color: "rgba(59, 130, 246, 0.3)" });

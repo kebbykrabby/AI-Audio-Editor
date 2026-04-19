@@ -1,17 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { getAsset } from "../api/assets";
 import type { Asset } from "./types";
-import { readPersistedAssetId, clearPersistedAssetId, useEditorStore } from "./editorStore";
+import {
+  clearPersistedAssetId,
+  clearPersistedPendingOp,
+  readPersistedAssetId,
+  readPersistedPendingOp,
+  useEditorStore,
+} from "./editorStore";
 
-const MAX_CHAIN_WALK = 200; // safety cap against cycles or pathological chains
+const MAX_CHAIN_WALK = 200;
 
 /**
- * On mount, read the persisted currentAssetId and walk parentAssetId back to
- * the original so the frontend can reconstruct the edit chain across reloads.
- *
- * Redo-forward history is intentionally not restored (see PRD §Page Refresh).
- * Silently clears the stored id on any failure so the user lands on the upload
- * zone instead of an error banner.
+ * On mount:
+ *   1. Walk the persisted asset's parent chain to reconstruct the linear edit history.
+ *   2. If a pending operation was persisted whose inputAssetId matches the restored
+ *      tip, seed it into the store so OperationPanel can resume polling.
+ *   3. Stale pending ops (different tip, asset unresolvable) are silently cleared.
  */
 export function useRestoreSession(): { isRestoring: boolean } {
   const [isRestoring, setIsRestoring] = useState<boolean>(() => !!readPersistedAssetId());
@@ -22,7 +27,11 @@ export function useRestoreSession(): { isRestoring: boolean } {
     hasRun.current = true;
 
     const storedId = readPersistedAssetId();
+    const pending = readPersistedPendingOp();
+
     if (!storedId) {
+      // No tip → any pending op is orphaned.
+      if (pending) clearPersistedPendingOp();
       setIsRestoring(false);
       return;
     }
@@ -35,18 +44,17 @@ export function useRestoreSession(): { isRestoring: boolean } {
         while (nextId && steps < MAX_CHAIN_WALK) {
           const asset = await getAsset(nextId);
           if (asset.status !== "ready") {
-            // If the tip is still processing, just abandon restoration — user
-            // probably reloaded mid-operation. Clear and show upload zone.
             clearPersistedAssetId();
+            if (pending) clearPersistedPendingOp();
             return;
           }
           chain.push(asset);
           nextId = asset.parentAssetId;
           steps += 1;
         }
-        // chain is ordered [current, parent, grandparent, ..., root];
-        // flip to chronological order for the history stack.
         const history = chain.reverse();
+        const tip = history[history.length - 1] ?? null;
+
         useEditorStore.setState({
           assetHistory: history,
           currentIndex: history.length - 1,
@@ -54,9 +62,15 @@ export function useRestoreSession(): { isRestoring: boolean } {
           error: null,
           warning: null,
         });
+
+        if (pending && tip && pending.inputAssetId === tip.assetId) {
+          useEditorStore.getState().setPendingOperation(pending);
+        } else if (pending) {
+          clearPersistedPendingOp();
+        }
       } catch {
-        // 404, network error, or any other failure — silently drop the stored id.
         clearPersistedAssetId();
+        clearPersistedPendingOp();
       } finally {
         setIsRestoring(false);
       }

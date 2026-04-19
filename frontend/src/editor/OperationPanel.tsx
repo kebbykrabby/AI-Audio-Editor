@@ -1,9 +1,23 @@
-import { useState } from "react";
-import { executeOperation } from "../api/operations";
+import { useEffect, useRef, useState } from "react";
+import { ApiRequestError } from "../api/client";
+import { enqueueOperation, pollOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
+import type { OperationResponse } from "../store/types";
 
-type OpType = "trim" | "delete" | "fade_in" | "fade_out" | "gain" | "normalize"
-  | "reverse" | "remove_silence" | "extract_channel" | "swap_channels" | "mono_mixdown" | "speed";
+type OpType =
+  | "trim"
+  | "delete"
+  | "fade_in"
+  | "fade_out"
+  | "gain"
+  | "normalize"
+  | "reverse"
+  | "remove_silence"
+  | "extract_channel"
+  | "swap_channels"
+  | "mono_mixdown"
+  | "speed"
+  | "split_channels";
 
 const DURATION_CHANGING: OpType[] = ["trim", "delete", "remove_silence", "speed"];
 
@@ -11,7 +25,8 @@ export default function OperationPanel() {
   const asset = useEditorStore((s) => s.currentAsset());
   const selection = useEditorStore((s) => s.selection);
   const pushAsset = useEditorStore((s) => s.pushAsset);
-  const setProcessing = useEditorStore((s) => s.setProcessing);
+  const setPendingOperation = useEditorStore((s) => s.setPendingOperation);
+  const pendingOperation = useEditorStore((s) => s.pendingOperation);
   const setError = useEditorStore((s) => s.setError);
   const setWarning = useEditorStore((s) => s.setWarning);
   const isProcessing = useEditorStore((s) => s.isProcessing);
@@ -28,7 +43,70 @@ export default function OperationPanel() {
   const [silenceMinDuration, setSilenceMinDuration] = useState(0.5);
   const [extractCh, setExtractCh] = useState<"left" | "right">("left");
 
+  const abortRef = useRef<AbortController | null>(null);
+  const resumedRef = useRef(false);
+
+  // Abort any in-flight poll when the component unmounts.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  // Resume a pending op that survived a refresh.
+  useEffect(() => {
+    if (!asset || !pendingOperation || resumedRef.current) return;
+    if (pendingOperation.inputAssetId !== asset.assetId) return;
+    resumedRef.current = true;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    (async () => {
+      try {
+        const completed = await pollOperation(pendingOperation.operationId, {
+          signal: controller.signal,
+        });
+        applyCompletion(completed, pendingOperation.type as OpType);
+      } catch (e) {
+        if (e instanceof ApiRequestError && e.code === "ABORTED") return;
+        setError(friendlyMessage(e));
+      } finally {
+        setPendingOperation(null);
+        abortRef.current = null;
+      }
+    })();
+  }, [asset, pendingOperation]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!asset) return null;
+
+  const friendlyMessage = (e: unknown): string => {
+    if (e instanceof ApiRequestError) {
+      switch (e.code) {
+        case "SERVER_RESTART":
+          return "The previous operation was interrupted by a server restart. Please try again.";
+        case "PROCESSING_TIMEOUT":
+          return "Operation is taking longer than expected.";
+        default:
+          return e.message;
+      }
+    }
+    return e instanceof Error ? e.message : "Operation failed";
+  };
+
+  const applyCompletion = (res: OperationResponse, type: OpType) => {
+    if (!res.asset) return;
+    if (type === "split_channels") {
+      if (res.secondaryAsset) {
+        enterChannelEdit(asset.assetId, res.asset, res.secondaryAsset);
+      }
+    } else if (channelEdit) {
+      updateChannelAsset(channelEdit.activeChannel, res.asset);
+    } else {
+      pushAsset(res.asset, DURATION_CHANGING.includes(type));
+    }
+    if (res.warning) setWarning(res.warning);
+  };
 
   const validate = (type: OpType, params: Record<string, unknown>): string | null => {
     const duration = asset.durationSec ?? 0;
@@ -55,51 +133,45 @@ export default function OperationPanel() {
     return null;
   };
 
-  const handleSplitChannels = async () => {
-    if (!asset) return;
-    setProcessing(true);
-    setError(null);
-    try {
-      const res = await executeOperation("split_channels", asset.assetId, {});
-      if (res.secondaryAsset) {
-        enterChannelEdit(asset.assetId, res.asset, res.secondaryAsset);
-      }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Split failed");
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   const runOp = async (type: OpType, params: Record<string, unknown>) => {
     const validationError = validate(type, params);
     if (validationError) {
       setError(validationError);
       return;
     }
-    setProcessing(true);
+    if (pendingOperation) return; // single-op discipline
+
     setError(null);
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const res = await executeOperation(type, asset.assetId, params);
-      const durationChanged = DURATION_CHANGING.includes(type);
-      if (channelEdit) {
-        updateChannelAsset(channelEdit.activeChannel, res.asset);
-      } else {
-        pushAsset(res.asset, durationChanged);
-      }
-      if (res.warning) setWarning(res.warning);
+      const enqueued = await enqueueOperation(type, asset.assetId, params);
+      setPendingOperation({
+        operationId: enqueued.operationId,
+        type,
+        inputAssetId: asset.assetId,
+        startedAt: Date.now(),
+      });
+      const completed = await pollOperation(enqueued.operationId, {
+        signal: controller.signal,
+      });
+      applyCompletion(completed, type);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Operation failed");
+      if (e instanceof ApiRequestError && e.code === "ABORTED") return;
+      setError(friendlyMessage(e));
     } finally {
-      setProcessing(false);
+      setPendingOperation(null);
+      abortRef.current = null;
     }
   };
+
+  const handleSplitChannels = () => runOp("split_channels", {});
 
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wide">Operations</h3>
 
-      {/* Selection-based ops */}
       <div className="flex flex-wrap gap-2">
         <button
           disabled={isProcessing || !selection}
@@ -119,7 +191,6 @@ export default function OperationPanel() {
         </button>
       </div>
 
-      {/* Fade */}
       <div className="flex flex-wrap items-end gap-2">
         <div>
           <label className="text-xs text-slate-500">Duration (s)</label>
@@ -134,20 +205,31 @@ export default function OperationPanel() {
         </div>
         <div>
           <label className="text-xs text-slate-500">Curve</label>
-          <select value={fadeCurve} onChange={(e) => setFadeCurve(e.target.value as any)} className="param-input">
+          <select
+            value={fadeCurve}
+            onChange={(e) => setFadeCurve(e.target.value as "linear" | "exponential")}
+            className="param-input"
+          >
             <option value="linear">Linear</option>
             <option value="exponential">Exponential</option>
           </select>
         </div>
-        <button disabled={isProcessing} onClick={() => runOp("fade_in", { duration_sec: fadeDuration, curve: fadeCurve })} className="op-btn">
+        <button
+          disabled={isProcessing}
+          onClick={() => runOp("fade_in", { duration_sec: fadeDuration, curve: fadeCurve })}
+          className="op-btn"
+        >
           Fade In
         </button>
-        <button disabled={isProcessing} onClick={() => runOp("fade_out", { duration_sec: fadeDuration, curve: fadeCurve })} className="op-btn">
+        <button
+          disabled={isProcessing}
+          onClick={() => runOp("fade_out", { duration_sec: fadeDuration, curve: fadeCurve })}
+          className="op-btn"
+        >
           Fade Out
         </button>
       </div>
 
-      {/* Gain */}
       <div className="flex items-end gap-2">
         <div>
           <label className="text-xs text-slate-500">Gain (dB)</label>
@@ -174,7 +256,6 @@ export default function OperationPanel() {
         </button>
       </div>
 
-      {/* Normalize */}
       <div className="flex items-end gap-2">
         <div>
           <label className="text-xs text-slate-500">Target (dB)</label>
@@ -193,7 +274,6 @@ export default function OperationPanel() {
         </button>
       </div>
 
-      {/* Transform */}
       <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4">Transform</h4>
       <div className="flex flex-wrap items-end gap-2">
         <button disabled={isProcessing} onClick={() => runOp("reverse", {})} className="op-btn">
@@ -226,7 +306,6 @@ export default function OperationPanel() {
         </button>
       </div>
 
-      {/* Silence Removal */}
       <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4">Silence Removal</h4>
       <div className="flex flex-wrap items-end gap-2">
         <div>
@@ -262,7 +341,6 @@ export default function OperationPanel() {
         </button>
       </div>
 
-      {/* Channel Operations — only for stereo, hide in channel edit mode */}
       {asset.channels === 2 && !channelEdit && (
         <>
           <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4">Channel Operations</h4>
@@ -272,12 +350,20 @@ export default function OperationPanel() {
             </button>
             <div>
               <label className="text-xs text-slate-500">Channel</label>
-              <select value={extractCh} onChange={(e) => setExtractCh(e.target.value as "left" | "right")} className="param-input">
+              <select
+                value={extractCh}
+                onChange={(e) => setExtractCh(e.target.value as "left" | "right")}
+                className="param-input"
+              >
                 <option value="left">Left</option>
                 <option value="right">Right</option>
               </select>
             </div>
-            <button disabled={isProcessing} onClick={() => runOp("extract_channel", { channel: extractCh })} className="op-btn">
+            <button
+              disabled={isProcessing}
+              onClick={() => runOp("extract_channel", { channel: extractCh })}
+              className="op-btn"
+            >
               Extract Channel
             </button>
             <button disabled={isProcessing} onClick={() => runOp("swap_channels", {})} className="op-btn">
