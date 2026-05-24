@@ -74,6 +74,28 @@ class Settings(BaseSettings):
     APPLE_PRIVATE_KEY_PATH: str | None = None  # path to AuthKey_XXX.p8
     APPLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/oauth/apple/callback"
 
+    # AI / transcription
+    # "fake"   = FakeTranscriptionProvider (default; used by tests + offline dev)
+    # "local"  = LocalWhisperProvider via faster-whisper (no API key, no cost)
+    # "openai" = WhisperProvider against OpenAI (kept for future swap back)
+    TRANSCRIPTION_PROVIDER: str = "fake"
+    # Local whisper (faster-whisper) knobs. Only read when provider="local".
+    WHISPER_LOCAL_MODEL: str = "base"        # tiny | base | small | medium | large-v3
+    WHISPER_LOCAL_DEVICE: str = "auto"       # auto | cpu | cuda
+    WHISPER_LOCAL_COMPUTE_TYPE: str = "auto"  # auto | int8 | int8_float16 | float16 | float32
+    # Cloud whisper (OpenAI). Only read when provider="openai".
+    OPENAI_API_KEY: str | None = None
+    WHISPER_MODEL: str = "whisper-1"
+    # Per-operation cost ceiling (USD). Admission rejects above this.
+    AI_PER_OP_USD: float = 0.50
+    # Input caps matched to Whisper-1 limits with a 1 MB headroom.
+    AI_MAX_INPUT_DURATION_SEC: int = 1800  # 30 min
+    AI_MAX_INPUT_SIZE_MB: int = 24
+    # Per-user / per-IP rate limits on AI ops (Redis, OTP-limiter primitive).
+    AI_OPS_PER_HOUR_PER_USER: int = 5
+    AI_OPS_PER_DAY_PER_USER: int = 20
+    AI_OPS_PER_HOUR_PER_IP: int = 10
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
