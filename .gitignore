@@ -39,6 +39,8 @@ Desktop.ini
 # Test fixtures
 test_tone.wav
 
+test_files/
+
 # Claude Code
 .claude/
 
