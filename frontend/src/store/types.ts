@@ -34,6 +34,24 @@ export type OperationStatus =
   | "failed"
   | "cancelled";
 
+export interface FillerRegion {
+  start: number;
+  end: number;
+  text: string;
+  category: string;
+  confidence: number;
+  wordIndex: number;
+}
+
+export interface FillerDetectionResult {
+  transcriptId: string;
+  durationSec: number;
+  language: string;
+  regions: FillerRegion[];
+  costUsd?: number | null;
+  modelVersion: string;
+}
+
 export interface OperationResponse {
   operationId: string;
   status: OperationStatus;
@@ -41,6 +59,8 @@ export interface OperationResponse {
   asset?: Asset | null;
   secondaryAsset?: Asset | null;
   error?: ApiError["error"];
+  // AI ops (ai_detect_fillers) populate this; deterministic ops leave it absent.
+  result?: FillerDetectionResult | null;
 }
 
 export type ExportStatus = "queued" | "running" | "completed" | "failed";

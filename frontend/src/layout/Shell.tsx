@@ -9,6 +9,7 @@ import WaveformErrorBoundary from "../audio/WaveformErrorBoundary";
 import SelectionInfo from "../editor/SelectionInfo";
 import OperationPanel from "../editor/OperationPanel";
 import ChannelEditor from "../editor/ChannelEditor";
+import FillerReviewPanel from "../editor/FillerReviewPanel";
 
 function Workspace() {
   const { isRestoring } = useRestoreSession();
@@ -19,6 +20,7 @@ function Workspace() {
   const setError = useEditorStore((s) => s.setError);
   const setWarning = useEditorStore((s) => s.setWarning);
   const channelEdit = useEditorStore((s) => s.channelEdit);
+  const activeFillerReview = useEditorStore((s) => s.activeFillerReview);
 
   if (isRestoring) {
     return (
@@ -78,7 +80,7 @@ function Workspace() {
               <WaveformPlayer />
             </WaveformErrorBoundary>
             <SelectionInfo />
-            <OperationPanel />
+            {activeFillerReview ? <FillerReviewPanel /> : <OperationPanel />}
           </>
         )}
       </div>

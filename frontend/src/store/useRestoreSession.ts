@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { getAsset } from "../api/assets";
-import type { Asset } from "./types";
+import { getOperation } from "../api/operations";
+import type { Asset, FillerDetectionResult } from "./types";
 import {
   clearPersistedAssetId,
   clearPersistedPendingOp,
   readPersistedAssetId,
+  readPersistedLastDetectOperationId,
   readPersistedPendingOp,
   useEditorStore,
 } from "./editorStore";
@@ -68,6 +70,11 @@ export function useRestoreSession(): { isRestoring: boolean } {
         } else if (pending) {
           clearPersistedPendingOp();
         }
+
+        // Restore an in-progress filler review: if the persisted op is still
+        // completed AND its input asset is the current tip, re-enter review mode
+        // without a second transcription.
+        await restoreFillerReview(tip);
       } catch {
         clearPersistedAssetId();
         clearPersistedPendingOp();
@@ -78,4 +85,28 @@ export function useRestoreSession(): { isRestoring: boolean } {
   }, []);
 
   return { isRestoring };
+}
+
+async function restoreFillerReview(tip: Asset | null): Promise<void> {
+  const lastDetectId = readPersistedLastDetectOperationId();
+  if (!lastDetectId || !tip) return;
+  try {
+    const op = await getOperation(lastDetectId);
+    if (op.status !== "completed" || !op.result) return;
+    // Treat `op.result` as the FillerDetectionResult. The server never puts
+    // anything else on an ai_detect_fillers op, and the backend has scoped
+    // the fetch to the current user.
+    const result = op.result as FillerDetectionResult;
+    // Only restore if the detection was run on the current asset.
+    if (result.durationSec !== tip.durationSec) return;
+    useEditorStore.getState().enterFillerReview({
+      operationId: lastDetectId,
+      inputAssetId: tip.assetId,
+      result,
+      rejectedWordIndices: new Set(),
+      confidenceThreshold: 0.7,
+    });
+  } catch {
+    // Stale / deleted / cross-user → silently ignore.
+  }
 }

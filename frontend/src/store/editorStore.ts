@@ -1,8 +1,9 @@
 import { create } from "zustand";
-import type { Asset, Selection } from "./types";
+import type { Asset, FillerDetectionResult, Selection } from "./types";
 
 const STORAGE_KEY = "audioEditor.currentAssetId";
 const PENDING_OP_KEY = "audioEditor.pendingOperation";
+const LAST_DETECT_OP_KEY = "audioEditor.lastDetectOperationId";
 
 function persistCurrentAssetId(id: string | null): void {
   try {
@@ -57,6 +58,33 @@ export function clearPersistedPendingOp(): void {
   persistPendingOp(null);
 }
 
+function persistLastDetectOperationId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(LAST_DETECT_OP_KEY, id);
+    else localStorage.removeItem(LAST_DETECT_OP_KEY);
+  } catch {
+    // fail silently
+  }
+}
+
+export function readPersistedLastDetectOperationId(): string | null {
+  try {
+    return localStorage.getItem(LAST_DETECT_OP_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export interface ActiveFillerReview {
+  operationId: string;
+  inputAssetId: string;
+  result: FillerDetectionResult;
+  // Indices of regions the user has rejected. Initial state = empty = all accepted
+  // above the confidence threshold.
+  rejectedWordIndices: Set<number>;
+  confidenceThreshold: number;
+}
+
 interface ChannelEditState {
   leftAsset: Asset;
   rightAsset: Asset;
@@ -76,6 +104,8 @@ interface EditorState {
   error: string | null;
   warning: string | null;
   channelEdit: ChannelEditState | null;
+  activeFillerReview: ActiveFillerReview | null;
+  playbackRequest: { startSec: number; endSec: number; id: number } | null;
 
   currentAsset: () => Asset | null;
   canUndo: () => boolean;
@@ -102,6 +132,11 @@ interface EditorState {
   updateChannelAsset: (channel: "left" | "right", asset: Asset) => void;
   setActiveChannel: (ch: "left" | "right") => void;
   exitChannelEdit: () => void;
+  enterFillerReview: (review: ActiveFillerReview) => void;
+  toggleFillerReject: (wordIndex: number) => void;
+  setFillerConfidenceThreshold: (threshold: number) => void;
+  exitFillerReview: () => void;
+  playRange: (startSec: number, endSec: number) => void;
   reset: () => void;
 }
 
@@ -119,6 +154,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   error: null,
   warning: null,
   channelEdit: null,
+  activeFillerReview: null,
+  playbackRequest: null,
 
   currentAsset: () => {
     const { channelEdit, assetHistory, currentIndex } = get();
@@ -233,6 +270,39 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   exitChannelEdit: () => set({ channelEdit: null, selection: null }),
 
+  enterFillerReview: (review) => {
+    persistLastDetectOperationId(review.operationId);
+    set({ activeFillerReview: review });
+  },
+
+  toggleFillerReject: (wordIndex) => {
+    const review = get().activeFillerReview;
+    if (!review) return;
+    const next = new Set(review.rejectedWordIndices);
+    if (next.has(wordIndex)) next.delete(wordIndex);
+    else next.add(wordIndex);
+    set({ activeFillerReview: { ...review, rejectedWordIndices: next } });
+  },
+
+  setFillerConfidenceThreshold: (threshold) => {
+    const review = get().activeFillerReview;
+    if (!review) return;
+    set({
+      activeFillerReview: {
+        ...review,
+        confidenceThreshold: Math.max(0, Math.min(1, threshold)),
+      },
+    });
+  },
+
+  exitFillerReview: () => {
+    persistLastDetectOperationId(null);
+    set({ activeFillerReview: null });
+  },
+
+  playRange: (startSec, endSec) =>
+    set({ playbackRequest: { startSec, endSec, id: Date.now() } }),
+
   reset: () => {
     set({
       assetHistory: [],
@@ -246,8 +316,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       error: null,
       warning: null,
       channelEdit: null,
+      activeFillerReview: null,
+      playbackRequest: null,
     });
     clearPersistedAssetId();
     clearPersistedPendingOp();
+    persistLastDetectOperationId(null);
   },
 }));

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { detectFillers } from "../api/ai";
 import { ApiRequestError } from "../api/client";
 import { enqueueOperation, pollOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
@@ -33,6 +34,8 @@ export default function OperationPanel() {
   const channelEdit = useEditorStore((s) => s.channelEdit);
   const updateChannelAsset = useEditorStore((s) => s.updateChannelAsset);
   const enterChannelEdit = useEditorStore((s) => s.enterChannelEdit);
+  const enterFillerReview = useEditorStore((s) => s.enterFillerReview);
+  const [detecting, setDetecting] = useState(false);
 
   const [fadeDuration, setFadeDuration] = useState(1.0);
   const [fadeCurve, setFadeCurve] = useState<"linear" | "exponential">("linear");
@@ -167,6 +170,39 @@ export default function OperationPanel() {
   };
 
   const handleSplitChannels = () => runOp("split_channels", {});
+
+  const handleFindFillers = async () => {
+    if (!asset || detecting || isProcessing) return;
+
+    const durationSec = asset.durationSec ?? 0;
+    const confirmMsg =
+      `Find filler words in this audio?\n\n` +
+      `Duration: ${durationSec.toFixed(1)}s\n` +
+      `The audio will be transcribed by the configured AI provider.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setError(null);
+    setDetecting(true);
+    try {
+      const { operationId, result } = await detectFillers(asset.assetId, {
+        confidence_threshold: 0,
+      });
+      enterFillerReview({
+        operationId,
+        inputAssetId: asset.assetId,
+        result,
+        rejectedWordIndices: new Set(),
+        confidenceThreshold: 0.7,
+      });
+      if (result.regions.length === 0) {
+        setWarning("No filler words detected in this audio.");
+      }
+    } catch (e) {
+      setError(friendlyMessage(e));
+    } finally {
+      setDetecting(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -375,6 +411,18 @@ export default function OperationPanel() {
           </div>
         </>
       )}
+
+      <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4">AI</h4>
+      <div className="flex flex-wrap items-end gap-2">
+        <button
+          disabled={isProcessing || detecting}
+          onClick={handleFindFillers}
+          className="op-btn"
+          title="Detect ums, uhs, and other filler words — review before removing"
+        >
+          {detecting ? "Transcribing…" : "Find filler words"}
+        </button>
+      </div>
 
       {!selection && (
         <p className="text-xs text-slate-500 mt-2">Select a region on the waveform to use Trim and Delete</p>
