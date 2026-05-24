@@ -34,10 +34,13 @@ python -m venv .venv
 # 5. Run the API (one terminal)
 .venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8000
 
-# 6. Run the worker (another terminal)
-.venv/Scripts/dramatiq.exe app.workers.entrypoint -p 1 -t 1
+# 6. Run the DSP worker (another terminal) — handles uploads, operations, exports
+.venv/Scripts/dramatiq.exe app.workers.entrypoint -Q uploads operations exports -p 1 -t 1
 
-# 7. Run the frontend (another terminal)
+# 7. Run the AI worker (another terminal) — keeps slow transcription off the DSP pool
+.venv/Scripts/dramatiq.exe app.workers.entrypoint -Q ai -p 1 -t 1
+
+# 8. Run the frontend (another terminal)
 cd ../frontend
 npm install
 npm run dev

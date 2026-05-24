@@ -3,7 +3,9 @@
 Starts:
   - Docker services (postgres, redis, minio, minio-init) via `docker compose up -d --wait`
   - Backend API (uvicorn)   on :8000
-  - Dramatiq worker
+  - DSP worker  (Dramatiq, -Q uploads operations exports)
+  - AI worker   (Dramatiq, -Q ai) — separate pool so transcription latency
+                                     never blocks a DSP op
   - Frontend Vite dev server on :5173
 
 Output from each service is streamed with a colored label prefix.
@@ -42,6 +44,7 @@ COLORS = {
     "green":   "\033[32m",
     "yellow":  "\033[33m",
     "red":     "\033[31m",
+    "blue":    "\033[34m",
     "reset":   "\033[0m",
 }
 
@@ -184,9 +187,21 @@ def main() -> int:
             )))
 
         if not args.no_worker:
-            procs.append(("worker", _spawn(
-                "worker", "magenta",
-                [_dramatiq_exe(), "app.workers.entrypoint", "-p", "1", "-t", "1"],
+            # Two pools so AI transcription (slow, network/CPU-bound) never
+            # blocks a DSP op (fast, FFmpeg-bound). Single process + single
+            # thread each — dev profile; scale with -p/-t in production.
+            procs.append(("dsp", _spawn(
+                "dsp", "magenta",
+                [_dramatiq_exe(), "app.workers.entrypoint",
+                 "-Q", "uploads", "operations", "exports",
+                 "-p", "1", "-t", "1"],
+                cwd=backend_dir,
+            )))
+            procs.append(("ai", _spawn(
+                "ai", "blue",
+                [_dramatiq_exe(), "app.workers.entrypoint",
+                 "-Q", "ai",
+                 "-p", "1", "-t", "1"],
                 cwd=backend_dir,
             )))
 
