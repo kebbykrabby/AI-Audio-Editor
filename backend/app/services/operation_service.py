@@ -141,6 +141,7 @@ async def build_operation_response(
         asset=asset_resp,
         secondaryAsset=secondary_resp,
         error=error,
+        result=op.result,
     )
 
 
@@ -460,7 +461,35 @@ async def _dispatch_async(
         return await ffmpeg_proc.mono_mixdown(input_path, output_path)
     if op_type == "speed":
         return await ffmpeg_proc.speed(input_path, output_path, params["factor"])
+    if op_type == "remove_segments":
+        intervals_raw = params["intervals"]
+        intervals = [(float(iv["start"]), float(iv["end"])) for iv in intervals_raw]
+        crossfade_ms = float(params.get("crossfade_ms", 20.0))
+        merged = _merge_adjacent(intervals, gap_threshold_sec=2 * crossfade_ms / 1000.0)
+        return await ffmpeg_proc.remove_segments_with_crossfade(
+            input_path, output_path,
+            intervals=merged, duration_sec=duration, crossfade_ms=crossfade_ms,
+        )
     raise OperationError("INVALID_OPERATION", f"Unknown operation: {op_type}")
+
+
+def _merge_adjacent(
+    intervals: list[tuple[float, float]], *, gap_threshold_sec: float
+) -> list[tuple[float, float]]:
+    """Merge intervals whose gap falls under the crossfade width so the
+    crossfade windows don't overlap. Caller has already sorted + validated
+    non-overlap; this only collapses near-adjacent ranges.
+    """
+    if not intervals:
+        return []
+    merged = [intervals[0]]
+    for s, e in intervals[1:]:
+        last_s, last_e = merged[-1]
+        if s - last_e < gap_threshold_sec:
+            merged[-1] = (last_s, max(last_e, e))
+        else:
+            merged.append((s, e))
+    return merged
 
 
 def _validate_params(op_type: str, params: dict, duration: float) -> None:
@@ -494,3 +523,42 @@ def _validate_params(op_type: str, params: dict, duration: float) -> None:
                 field="duration_sec", constraint=f"must be <= {duration}",
                 received=params["duration_sec"],
             )
+    elif op_type == "remove_segments":
+        intervals = params.get("intervals") or []
+        if not intervals:
+            raise OperationError(
+                "INVALID_PARAMETERS", "intervals must not be empty",
+                field="intervals", constraint="min_length=1", received=0,
+            )
+        # Sort by start and enforce non-overlap + bounds. Pydantic has already
+        # range-checked each interval's fields; we validate the relationship.
+        sorted_intervals = sorted(intervals, key=lambda iv: iv["start"])
+        prev_end = -1.0
+        for iv in sorted_intervals:
+            s, e = float(iv["start"]), float(iv["end"])
+            if s >= e:
+                raise OperationError(
+                    "INVALID_PARAMETERS", "interval.start must be < interval.end",
+                    field="intervals", constraint="start < end", received=s,
+                )
+            if e > duration:
+                raise OperationError(
+                    "INVALID_PARAMETERS", "interval.end exceeds audio duration",
+                    field="intervals", constraint=f"end must be <= {duration}", received=e,
+                )
+            if s < prev_end:
+                raise OperationError(
+                    "INVALID_PARAMETERS", "intervals must not overlap",
+                    field="intervals", constraint="non-overlapping", received=s,
+                )
+            prev_end = e
+        # Ensure at least one keeper segment survives.
+        total_cut = sum(float(iv["end"]) - float(iv["start"]) for iv in sorted_intervals)
+        if total_cut >= duration:
+            raise OperationError(
+                "INVALID_PARAMETERS", "removing all intervals would leave an empty output",
+                field="intervals", constraint="total coverage must be < duration", received=total_cut,
+            )
+        # Replace caller-supplied order with the sorted form so the worker
+        # can trust it.
+        params["intervals"] = sorted_intervals

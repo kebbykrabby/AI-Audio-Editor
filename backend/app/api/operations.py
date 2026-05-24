@@ -81,7 +81,7 @@ async def get_operation(
 
     response = await operation_service.build_operation_response(db, op)
     payload = response.model_dump()
-    for k in ("asset", "secondaryAsset", "error", "warning"):
+    for k in ("asset", "secondaryAsset", "error", "warning", "result"):
         if payload.get(k) is None:
             payload.pop(k, None)
 

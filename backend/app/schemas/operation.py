@@ -69,6 +69,16 @@ class MergeChannelsParams(BaseModel):
     right_asset_id: str
 
 
+class RemoveSegmentsInterval(BaseModel):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+
+
+class RemoveSegmentsParams(BaseModel):
+    intervals: list[RemoveSegmentsInterval] = Field(min_length=1, max_length=500)
+    crossfade_ms: float = Field(ge=5, le=100, default=20.0)
+
+
 # --- Operation request models (discriminated union) ---
 
 class TrimOperation(BaseModel):
@@ -141,6 +151,11 @@ class MergeChannelsOperation(BaseModel):
     parameters: MergeChannelsParams
 
 
+class RemoveSegmentsOperation(BaseModel):
+    type: Literal["remove_segments"]
+    parameters: RemoveSegmentsParams
+
+
 OperationRequest = Annotated[
     TrimOperation
     | DeleteOperation
@@ -155,7 +170,8 @@ OperationRequest = Annotated[
     | MonoMixdownOperation
     | SpeedOperation
     | SplitChannelsOperation
-    | MergeChannelsOperation,
+    | MergeChannelsOperation
+    | RemoveSegmentsOperation,
     Field(discriminator="type"),
 ]
 
@@ -169,3 +185,7 @@ class OperationResponse(BaseModel):
     asset: AssetResponse | None = None
     secondaryAsset: AssetResponse | None = None
     error: ErrorBody | None = None
+    # For AI ops (ai_detect_fillers) that return structured data rather than an
+    # asset. None for deterministic ops. Shape is op-type-specific; the client
+    # uses the op's `type` to interpret.
+    result: dict | None = None
