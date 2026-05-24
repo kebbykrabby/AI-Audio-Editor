@@ -27,7 +27,7 @@ sys.path.insert(0, str(_REPO / "backend"))
 
 # Import order matters: registering all models before create_all.
 from app.database import Base, engine  # noqa: E402
-from app.models import asset, operation, export, user  # noqa: E402,F401
+from app.models import analysis, asset, operation, export, user  # noqa: E402,F401
 
 
 async def main() -> None:

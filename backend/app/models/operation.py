@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, SmallInteger, String, Text
+from sqlalchemy import ForeignKey, Index, Numeric, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import JSON_COL, UUID_COL, Base
@@ -33,6 +33,8 @@ class Operation(Base):
         UUID_COL, ForeignKey("assets.id"), nullable=True
     )
     parameters: Mapped[dict] = mapped_column(JSON_COL, default=dict)
+    result: Mapped[dict | None] = mapped_column(JSON_COL, nullable=True)
+    cost_usd: Mapped[float | None] = mapped_column(Numeric(10, 6), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="queued")
     warning: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
