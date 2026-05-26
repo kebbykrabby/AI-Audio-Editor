@@ -2,7 +2,22 @@ import { useMemo, useRef, useState } from "react";
 import { ApiRequestError } from "../api/client";
 import { enqueueOperation, pollOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
-import type { ProfanityRegion } from "../store/types";
+import type { CensorMode, ProfanityRegion } from "../store/types";
+
+const MODE_LABELS: Record<CensorMode, string> = {
+  beep: "Beep (1 kHz tone)",
+  mute: "Mute (silence)",
+  cut: "Cut (remove + shorten)",
+  reverse_pitch: "Reverse + pitch shift",
+};
+
+const MODE_DESCRIPTIONS: Record<CensorMode, string> = {
+  beep: "Replace each word with a sine tone. Recognizable broadcast censorship.",
+  mute: "Replace each word with silence. Less attention-grabbing.",
+  cut: "Remove each word entirely. Output duration is shorter than input.",
+  reverse_pitch:
+    "Replace each word with a reversed, pitch-shifted version. Output stays the same length.",
+};
 
 /**
  * Review panel for AI-detected profanity regions. Sibling of FillerReviewPanel
@@ -23,6 +38,7 @@ export default function ProfanityReviewPanel() {
   const asset = useEditorStore((s) => s.currentAsset());
   const review = useEditorStore((s) => s.activeProfanityReview);
   const toggleReject = useEditorStore((s) => s.toggleProfanityReject);
+  const setMode = useEditorStore((s) => s.setProfanityMode);
   const setBeepHz = useEditorStore((s) => s.setProfanityBeepHz);
   const exitReview = useEditorStore((s) => s.exitProfanityReview);
   const pushAsset = useEditorStore((s) => s.pushAsset);
@@ -65,6 +81,7 @@ export default function ProfanityReviewPanel() {
         {
           intervals: accepted.map((r) => ({ start: r.start, end: r.end })),
           mode: review.mode,
+          // beep_hz is only meaningful for mode=beep; always send it, server ignores otherwise.
           beep_hz: review.beepHz,
         },
       );
@@ -78,8 +95,9 @@ export default function ProfanityReviewPanel() {
         signal: controller.signal,
       });
       if (completed.asset) {
-        // censor_segments preserves duration, unlike remove_segments
-        pushAsset(completed.asset, /* durationChanged */ false);
+        // Only cut mode changes audio duration; the others replace in place.
+        const durationChanged = review.mode === "cut";
+        pushAsset(completed.asset, durationChanged);
       }
       exitReview();
     } catch (e) {
@@ -130,22 +148,41 @@ export default function ProfanityReviewPanel() {
         </div>
       </div>
 
-      {/* Phase 2 will turn this into a mode dropdown (beep / mute / cut / reverse-pitch). */}
-      <div className="flex items-center gap-3 text-xs text-slate-500">
-        <span>Mode: beep</span>
-        <label htmlFor="beep-hz">Frequency:</label>
-        <input
-          id="beep-hz"
-          type="number"
-          min={200}
-          max={8000}
-          step={100}
-          value={review.beepHz}
-          onChange={(e) => setBeepHz(Number(e.target.value))}
-          className="w-20 bg-slate-800 border border-slate-700 px-1 text-slate-200 rounded"
+      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+        <label htmlFor="censor-mode" className="text-slate-400">Mode</label>
+        <select
+          id="censor-mode"
+          value={review.mode}
+          onChange={(e) => setMode(e.target.value as CensorMode)}
           disabled={committing}
-        />
-        <span>Hz</span>
+          className="bg-slate-800 border border-slate-700 px-2 py-1 text-slate-200 rounded"
+        >
+          {(Object.keys(MODE_LABELS) as CensorMode[]).map((m) => (
+            <option key={m} value={m}>
+              {MODE_LABELS[m]}
+            </option>
+          ))}
+        </select>
+        {review.mode === "beep" && (
+          <>
+            <label htmlFor="beep-hz" className="text-slate-400">Frequency</label>
+            <input
+              id="beep-hz"
+              type="number"
+              min={200}
+              max={8000}
+              step={100}
+              value={review.beepHz}
+              onChange={(e) => setBeepHz(Number(e.target.value))}
+              className="w-20 bg-slate-800 border border-slate-700 px-1 text-slate-200 rounded"
+              disabled={committing}
+            />
+            <span>Hz</span>
+          </>
+        )}
+        <p className="text-xs text-slate-500 w-full italic">
+          {MODE_DESCRIPTIONS[review.mode]}
+        </p>
       </div>
 
       {total === 0 ? (

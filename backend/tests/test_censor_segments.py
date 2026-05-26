@@ -185,3 +185,118 @@ def test_full_file_beep(tmp_path):
     ))
     info = ffprobe_info(out)
     assert abs(info["duration_sec"] - 1.0) < 0.05
+
+
+# --- Mute mode --------------------------------------------------------------
+
+def test_mute_preserves_duration_and_format(tmp_path):
+    inp = _speech_like_wav(tmp_path / "in.wav", duration_sec=2.0, sample_rate=44100, channels=2)
+    out = tmp_path / "out.wav"
+    _run(ffmpeg_proc.censor_segments_with_mute(
+        inp, out, intervals=[(0.5, 1.0)], duration_sec=2.0,
+    ))
+    info_in = ffprobe_info(inp)
+    info_out = ffprobe_info(out)
+    assert abs(info_out["duration_sec"] - info_in["duration_sec"]) < 0.05
+    assert info_out["channels"] == info_in["channels"]
+    assert info_out["sample_rate"] == info_in["sample_rate"]
+
+
+def test_mute_silences_the_censored_region(tmp_path):
+    """Inside the mute window, sample energy must drop to ~zero."""
+    inp = _speech_like_wav(tmp_path / "in.wav", duration_sec=2.0, sample_rate=44100, channels=1)
+    out = tmp_path / "out.wav"
+    _run(ffmpeg_proc.censor_segments_with_mute(
+        inp, out, intervals=[(0.5, 1.0)], duration_sec=2.0,
+    ))
+    frames, sr, _ = _decode_samples(out)
+    # Sample well inside the mute window, away from the edge fades.
+    start = int(0.65 * sr)
+    end = int(0.85 * sr)
+    rms = float(np.sqrt(np.mean((frames[start:end].astype(np.float64)) ** 2)))
+    # int16 sine at -12 dBFS pre-mute is several thousand RMS; post-mute should be ~0.
+    assert rms < 200, f"Muted region RMS = {rms}, expected ~0"
+
+
+def test_mute_preserves_audio_outside_window(tmp_path):
+    inp = _speech_like_wav(tmp_path / "in.wav", duration_sec=2.0, sample_rate=44100, channels=1)
+    out = tmp_path / "out.wav"
+    _run(ffmpeg_proc.censor_segments_with_mute(
+        inp, out, intervals=[(0.5, 1.0)], duration_sec=2.0,
+    ))
+    frames, sr, _ = _decode_samples(out)
+    # Sample 100 ms in — well before the mute window.
+    start = int(0.05 * sr)
+    end = int(0.30 * sr)
+    dom = _dominant_freq(frames[start:end], sr)
+    assert abs(dom - 440) < 25, f"Pre-mute dominant freq {dom} Hz, expected 440 Hz"
+
+
+def test_mute_empty_intervals_raises(tmp_path):
+    inp = _speech_like_wav(tmp_path / "in.wav", duration_sec=1.0, sample_rate=44100, channels=1)
+    out = tmp_path / "out.wav"
+    with pytest.raises(ValueError):
+        _run(ffmpeg_proc.censor_segments_with_mute(
+            inp, out, intervals=[], duration_sec=1.0,
+        ))
+
+
+# --- Reverse-pitch mode -----------------------------------------------------
+
+def test_reverse_pitch_preserves_duration_and_format(tmp_path):
+    inp = _speech_like_wav(tmp_path / "in.wav", duration_sec=2.0, sample_rate=44100, channels=2)
+    out = tmp_path / "out.wav"
+    _run(ffmpeg_proc.censor_segments_with_reverse_pitch(
+        inp, out, intervals=[(0.5, 1.0)], duration_sec=2.0,
+    ))
+    info_in = ffprobe_info(inp)
+    info_out = ffprobe_info(out)
+    # The pitch_factor + atempo compensation should keep duration constant
+    # within FFmpeg's resampling rounding (a few ms at most).
+    assert abs(info_out["duration_sec"] - info_in["duration_sec"]) < 0.15, (
+        f"reverse_pitch should preserve duration: in={info_in['duration_sec']} "
+        f"out={info_out['duration_sec']}"
+    )
+    assert info_out["channels"] == info_in["channels"]
+
+
+def test_reverse_pitch_alters_the_censored_region(tmp_path):
+    """The censored region's dominant frequency should differ from the input's
+    440 Hz tone (shifted by the pitch_factor). Outside the region: unchanged.
+    """
+    inp = _speech_like_wav(tmp_path / "in.wav", duration_sec=2.0, sample_rate=44100, channels=1)
+    out = tmp_path / "out.wav"
+    _run(ffmpeg_proc.censor_segments_with_reverse_pitch(
+        inp, out, intervals=[(0.5, 1.5)], duration_sec=2.0, pitch_factor=0.7,
+    ))
+    frames, sr, _ = _decode_samples(out)
+    # Inside the censored region — pitch should be shifted DOWN from 440.
+    cen_start = int(0.8 * sr)
+    cen_end = int(1.2 * sr)
+    cen_dom = _dominant_freq(frames[cen_start:cen_end], sr)
+    # With pitch_factor=0.7, asetrate shifts the resampled tone DOWN to ~308 Hz
+    # (440 * 0.7). atempo time-stretches but preserves pitch. Allow ±60 Hz.
+    assert abs(cen_dom - 308) < 60, f"Reverse-pitch region freq {cen_dom} Hz, expected ~308 Hz"
+    # Outside the censored region — still 440 Hz.
+    out_start = int(0.05 * sr)
+    out_end = int(0.30 * sr)
+    out_dom = _dominant_freq(frames[out_start:out_end], sr)
+    assert abs(out_dom - 440) < 25, f"Pre-censor region freq {out_dom} Hz, expected 440 Hz"
+
+
+def test_reverse_pitch_empty_intervals_raises(tmp_path):
+    inp = _speech_like_wav(tmp_path / "in.wav", duration_sec=1.0, sample_rate=44100, channels=1)
+    out = tmp_path / "out.wav"
+    with pytest.raises(ValueError):
+        _run(ffmpeg_proc.censor_segments_with_reverse_pitch(
+            inp, out, intervals=[], duration_sec=1.0,
+        ))
+
+
+def test_reverse_pitch_rejects_nonpositive_factor(tmp_path):
+    inp = _speech_like_wav(tmp_path / "in.wav", duration_sec=1.0, sample_rate=44100, channels=1)
+    out = tmp_path / "out.wav"
+    with pytest.raises(ValueError):
+        _run(ffmpeg_proc.censor_segments_with_reverse_pitch(
+            inp, out, intervals=[(0.0, 0.5)], duration_sec=1.0, pitch_factor=0.0,
+        ))

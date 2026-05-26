@@ -439,6 +439,174 @@ def _build_censor_beep_filtergraph(
     return ";".join(parts + [concat])
 
 
+def _build_censor_mute_filtergraph(
+    intervals: list[tuple[float, float]],
+    edge_fade_sec: float = 0.005,
+) -> str:
+    """Filtergraph that mutes each interval to silence; output duration unchanged.
+
+    A tiny equal-power fade on each boundary prevents the abrupt amplitude
+    discontinuity that would otherwise pop. The fades are inward (eat 5 ms off
+    each end of the muted region) — the listener loses 10 ms of speech around
+    each cut, which is inaudible at this scale.
+    """
+    if not intervals:
+        return "anull"
+    # Chain a volume=enable filter per interval with a hard mute, plus inward
+    # afade at each boundary so the click is shaped instead of stepped.
+    parts: list[str] = []
+    for s, e in intervals:
+        # Hard mute window
+        parts.append(f"volume=enable='between(t,{s},{e})':volume=0")
+        # Fade-out into the muted region (last 5 ms before s)
+        fo_start = max(0.0, s - edge_fade_sec)
+        parts.append(
+            f"afade=enable='between(t,{fo_start},{s})':"
+            f"t=out:st={fo_start}:d={edge_fade_sec}:curve=hsin"
+        )
+        # Fade-in out of the muted region (first 5 ms after e)
+        parts.append(
+            f"afade=enable='between(t,{e},{e + edge_fade_sec})':"
+            f"t=in:st={e}:d={edge_fade_sec}:curve=hsin"
+        )
+    return ",".join(parts)
+
+
+async def censor_segments_with_mute(
+    input_path: Path,
+    output_path: Path,
+    intervals: list[tuple[float, float]],
+    duration_sec: float,
+) -> ProcessingResult:
+    """Replace each interval with silence; output duration unchanged.
+
+    Contract (caller-enforced): intervals sorted, non-overlapping, within
+    [0, duration_sec], len(intervals) >= 1.
+    """
+    if not intervals:
+        raise ValueError("intervals must be non-empty")
+    _ = duration_sec  # signature parity with the other censor modes
+    filtergraph = _build_censor_mute_filtergraph(intervals)
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-af", filtergraph,
+        str(output_path),
+        timeout=600,
+    )
+    return ProcessingResult(success=True)
+
+
+def _build_censor_reverse_pitch_filtergraph(
+    intervals: list[tuple[float, float]],
+    duration_sec: float,
+    channels: int,
+    pitch_factor: float = 0.85,
+    edge_fade_sec: float = 0.005,
+) -> str:
+    """Filtergraph that reverses + pitch-shifts each interval; output duration
+    unchanged.
+
+    The trick: `asetrate=SR*F,aresample=SR` shifts pitch by factor F while
+    changing duration by 1/F. `atempo=1/F` then compensates the duration so
+    the per-region output stays the same length as the input. Combined with
+    `areverse`, the censored word becomes a brief unintelligible sweep.
+    """
+    parts: list[str] = []
+    labels: list[str] = []
+    channel_layout = "stereo" if channels >= 2 else "mono"
+    duration_comp = 1.0 / pitch_factor
+
+    cursor = 0.0
+    for i, (s, e) in enumerate(intervals):
+        if s > cursor:
+            label = f"[orig{i}]"
+            parts.append(f"[0:a]atrim=start={cursor}:end={s},asetpts=N/SR/TB{label}")
+            labels.append(label)
+        rp_label = f"[rp{i}]"
+        seg_dur = e - s
+        fade_out_start = max(0.0, seg_dur - edge_fade_sec)
+        # Reverse + asetrate shifts pitch (and duration); atempo restores duration.
+        # The final aformat coerces channel layout so the concat doesn't barf
+        # if asetrate altered the layout description.
+        rp_chain = (
+            f"[0:a]atrim=start={s}:end={e},asetpts=N/SR/TB,"
+            f"areverse,"
+            f"asetrate=44100*{pitch_factor},aresample=44100,"
+            f"atempo={duration_comp:.6f},"
+            f"aformat=channel_layouts={channel_layout},"
+            f"afade=t=in:st=0:d={edge_fade_sec}:curve=hsin,"
+            f"afade=t=out:st={fade_out_start}:d={edge_fade_sec}:curve=hsin"
+        )
+        parts.append(f"{rp_chain}{rp_label}")
+        labels.append(rp_label)
+        cursor = e
+
+    if cursor < duration_sec:
+        label = "[orig_end]"
+        parts.append(f"[0:a]atrim=start={cursor},asetpts=N/SR/TB{label}")
+        labels.append(label)
+
+    concat = "".join(labels) + f"concat=n={len(labels)}:v=0:a=1[out]"
+    return ";".join(parts + [concat])
+
+
+async def censor_segments_with_reverse_pitch(
+    input_path: Path,
+    output_path: Path,
+    intervals: list[tuple[float, float]],
+    duration_sec: float,
+    pitch_factor: float = 0.85,
+) -> ProcessingResult:
+    """Reverse + pitch-shift each interval; output duration unchanged.
+
+    Contract (caller-enforced): intervals sorted, non-overlapping, within
+    [0, duration_sec], len(intervals) >= 1.
+    """
+    if not intervals:
+        raise ValueError("intervals must be non-empty")
+    if pitch_factor <= 0:
+        raise ValueError("pitch_factor must be positive")
+
+    info = await _probe(input_path)
+    audio_stream = next(
+        (s for s in info.get("streams", []) if s["codec_type"] == "audio"), None,
+    )
+    if audio_stream is None:
+        raise RuntimeError("No audio stream in input")
+    channels = int(audio_stream["channels"])
+
+    filtergraph = _build_censor_reverse_pitch_filtergraph(
+        intervals, duration_sec, channels, pitch_factor=pitch_factor,
+    )
+
+    if len(filtergraph) <= _FILTERGRAPH_INLINE_MAX:
+        await _run_ffmpeg(
+            "-i", str(input_path),
+            "-filter_complex", filtergraph,
+            "-map", "[out]",
+            str(output_path),
+            timeout=600,
+        )
+    else:
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".ffconcat", delete=False, encoding="utf-8",
+        ) as fh:
+            fh.write(filtergraph)
+            script_path = fh.name
+        try:
+            await _run_ffmpeg(
+                "-i", str(input_path),
+                "-filter_complex_script", script_path,
+                "-map", "[out]",
+                str(output_path),
+                timeout=600,
+            )
+        finally:
+            Path(script_path).unlink(missing_ok=True)
+
+    return ProcessingResult(success=True)
+
+
 async def censor_segments_with_beep(
     input_path: Path,
     output_path: Path,

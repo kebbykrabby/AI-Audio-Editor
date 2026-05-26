@@ -86,10 +86,17 @@ class CensorSegmentsInterval(BaseModel):
 
 class CensorSegmentsParams(BaseModel):
     intervals: list[CensorSegmentsInterval] = Field(min_length=1, max_length=500)
-    # Phase 1: only "beep" implemented. Phase 2 widens to mute / cut / reverse_pitch.
-    mode: Literal["beep"] = "beep"
+    # beep: 1 kHz sine over each region (duration-preserving).
+    # mute: silence each region (duration-preserving).
+    # cut: delete each region with crossfade (duration-SHORTENING; delegates
+    #      internally to the same DSP as remove_segments).
+    # reverse_pitch: reverse + pitch-shift each region (duration-preserving).
+    mode: Literal["beep", "mute", "cut", "reverse_pitch"] = "beep"
     # Beep tone frequency in Hz. Default 1 kHz mirrors broadcast convention.
+    # Ignored when mode != "beep".
     beep_hz: int = Field(ge=200, le=8000, default=1000)
+    # Crossfade width for mode="cut". Ignored otherwise. Matches remove_segments default.
+    crossfade_ms: float = Field(ge=5, le=100, default=20.0)
 
 
 # --- Operation request models (discriminated union) ---

@@ -71,8 +71,9 @@ export interface ProfanityDetectionResult {
   modelVersion: string;
 }
 
-// Phase 2 widens to: "beep" | "mute" | "cut" | "reverse_pitch"
-export type CensorMode = "beep";
+// All four modes ship in Phase 2. Only "cut" changes the audio duration —
+// the other three preserve it (the censored region is replaced in place).
+export type CensorMode = "beep" | "mute" | "cut" | "reverse_pitch";
 
 export interface OperationResponse {
   operationId: string;
