@@ -389,6 +389,113 @@ def _build_remove_segments_filtergraph(
     return ";".join(parts + [concat])
 
 
+def _build_censor_beep_filtergraph(
+    intervals: list[tuple[float, float]],
+    duration_sec: float,
+    beep_hz: int,
+    channels: int,
+    sample_rate: int,
+    edge_fade_sec: float = 0.005,
+    volume_db: float = -6.0,
+) -> str:
+    """Filtergraph that replaces each interval with a sine beep of the same
+    duration; output duration equals input duration.
+
+    Sine source is shaped to match the input's channel count and sample rate
+    so the concat doesn't need format coercion downstream. A tiny equal-power
+    fade-in/out (5 ms by default) on each beep edge prevents audible clicks
+    at the boundary with the surrounding speech.
+    """
+    parts: list[str] = []
+    labels: list[str] = []
+    channel_layout = "stereo" if channels >= 2 else "mono"
+
+    cursor = 0.0
+    for i, (s, e) in enumerate(intervals):
+        if s > cursor:
+            label = f"[orig{i}]"
+            parts.append(f"[0:a]atrim=start={cursor}:end={s},asetpts=N/SR/TB{label}")
+            labels.append(label)
+        beep_label = f"[beep{i}]"
+        beep_dur = e - s
+        fade_out_start = max(0.0, beep_dur - edge_fade_sec)
+        sine_chain = (
+            f"sine=frequency={beep_hz}:sample_rate={sample_rate}:duration={beep_dur},"
+            f"aformat=channel_layouts={channel_layout},"
+            f"volume={volume_db}dB,"
+            f"afade=t=in:st=0:d={edge_fade_sec}:curve=hsin,"
+            f"afade=t=out:st={fade_out_start}:d={edge_fade_sec}:curve=hsin"
+        )
+        parts.append(f"{sine_chain}{beep_label}")
+        labels.append(beep_label)
+        cursor = e
+
+    if cursor < duration_sec:
+        label = "[orig_end]"
+        parts.append(f"[0:a]atrim=start={cursor},asetpts=N/SR/TB{label}")
+        labels.append(label)
+
+    concat = "".join(labels) + f"concat=n={len(labels)}:v=0:a=1[out]"
+    return ";".join(parts + [concat])
+
+
+async def censor_segments_with_beep(
+    input_path: Path,
+    output_path: Path,
+    intervals: list[tuple[float, float]],
+    duration_sec: float,
+    beep_hz: int = 1000,
+) -> ProcessingResult:
+    """Replace each interval with a sine beep; output duration unchanged.
+
+    Contract (caller-enforced; this function assumes it):
+    - intervals sorted, non-overlapping, within [0, duration_sec]
+    - len(intervals) >= 1
+    """
+    if not intervals:
+        raise ValueError("intervals must be non-empty")
+
+    info = await _probe(input_path)
+    audio_stream = next(
+        (s for s in info.get("streams", []) if s["codec_type"] == "audio"), None,
+    )
+    if audio_stream is None:
+        raise RuntimeError("No audio stream in input")
+    channels = int(audio_stream["channels"])
+    sample_rate = int(audio_stream["sample_rate"])
+
+    filtergraph = _build_censor_beep_filtergraph(
+        intervals, duration_sec, beep_hz, channels, sample_rate,
+    )
+
+    if len(filtergraph) <= _FILTERGRAPH_INLINE_MAX:
+        await _run_ffmpeg(
+            "-i", str(input_path),
+            "-filter_complex", filtergraph,
+            "-map", "[out]",
+            str(output_path),
+            timeout=600,
+        )
+    else:
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".ffconcat", delete=False, encoding="utf-8",
+        ) as fh:
+            fh.write(filtergraph)
+            script_path = fh.name
+        try:
+            await _run_ffmpeg(
+                "-i", str(input_path),
+                "-filter_complex_script", script_path,
+                "-map", "[out]",
+                str(output_path),
+                timeout=600,
+            )
+        finally:
+            Path(script_path).unlink(missing_ok=True)
+
+    return ProcessingResult(success=True)
+
+
 async def remove_segments_with_crossfade(
     input_path: Path,
     output_path: Path,

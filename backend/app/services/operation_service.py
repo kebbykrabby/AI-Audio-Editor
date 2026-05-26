@@ -470,6 +470,24 @@ async def _dispatch_async(
             input_path, output_path,
             intervals=merged, duration_sec=duration, crossfade_ms=crossfade_ms,
         )
+    if op_type == "censor_segments":
+        intervals_raw = params["intervals"]
+        intervals = [(float(iv["start"]), float(iv["end"])) for iv in intervals_raw]
+        mode = params.get("mode", "beep")
+        beep_hz = int(params.get("beep_hz", 1000))
+        if mode == "beep":
+            return await ffmpeg_proc.censor_segments_with_beep(
+                input_path, output_path,
+                intervals=intervals, duration_sec=duration, beep_hz=beep_hz,
+            )
+        # Phase 2 will add mute / cut / reverse_pitch. The schema-level Literal
+        # already rejects them at request parse time; this guard catches a
+        # mismatched schema-vs-dispatch drift if it ever happens.
+        raise OperationError(
+            "INVALID_PARAMETERS",
+            f"Censor mode {mode!r} not supported (Phase 1 = beep only)",
+            field="mode", constraint="must be 'beep'", received=mode,
+        )
     raise OperationError("INVALID_OPERATION", f"Unknown operation: {op_type}")
 
 
@@ -523,7 +541,7 @@ def _validate_params(op_type: str, params: dict, duration: float) -> None:
                 field="duration_sec", constraint=f"must be <= {duration}",
                 received=params["duration_sec"],
             )
-    elif op_type == "remove_segments":
+    elif op_type in ("remove_segments", "censor_segments"):
         intervals = params.get("intervals") or []
         if not intervals:
             raise OperationError(

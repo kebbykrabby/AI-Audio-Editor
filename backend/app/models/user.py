@@ -21,6 +21,11 @@ class User(Base):
     phone_verified_at: Mapped[datetime | None] = mapped_column(nullable=True)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Per-user overrides for the curse-word censorship feature. Shape:
+    #   {"added": ["word1", ...], "removed": ["builtin_word1", ...]}
+    # Effective list = (BUILT_IN - removed) ∪ added. See `censorship_service`.
+    # Default-empty so existing users transparently inherit the built-in list.
+    censorship_words: Mapped[dict] = mapped_column(JSON_COL, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.utcnow, onupdate=datetime.utcnow

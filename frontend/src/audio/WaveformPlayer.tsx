@@ -5,6 +5,7 @@ import { useEditorStore } from "../store/editorStore";
 import { useAssetUrlRefresh } from "./useAssetUrlRefresh";
 
 const FILLER_REGION_ID_PREFIX = "filler-";
+const PROFANITY_REGION_ID_PREFIX = "profanity-";
 
 export default function WaveformPlayer() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -12,6 +13,7 @@ export default function WaveformPlayer() {
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const regionRef = useRef<Region | null>(null);
   const fillerRegionsRef = useRef<Region[]>([]);
+  const profanityRegionsRef = useRef<Region[]>([]);
   const skipSyncRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -24,6 +26,7 @@ export default function WaveformPlayer() {
   const currentTimeSec = useEditorStore((s) => s.currentTimeSec);
   const playbackRequest = useEditorStore((s) => s.playbackRequest);
   const activeFillerReview = useEditorStore((s) => s.activeFillerReview);
+  const activeProfanityReview = useEditorStore((s) => s.activeProfanityReview);
 
   // Pre-emptive URL refresh so signed URLs don't expire mid-session.
   // Also exposes refreshNow() for media-error recovery.
@@ -82,10 +85,14 @@ export default function WaveformPlayer() {
 
     // Region selection
     regions.enableDragSelection({ color: "rgba(59, 130, 246, 0.3)" });
+    const isAiOverlay = (id: string) =>
+      id.startsWith(FILLER_REGION_ID_PREFIX) ||
+      id.startsWith(PROFANITY_REGION_ID_PREFIX);
+
     regions.on("region-created", (region) => {
-      // AI-detected filler regions are owned by the activeFillerReview effect;
-      // they must not be treated as the user's drag-selection.
-      if (region.id.startsWith(FILLER_REGION_ID_PREFIX)) return;
+      // AI-detected overlays are owned by their effects (below); they must not
+      // be treated as the user's drag-selection.
+      if (isAiOverlay(region.id)) return;
       // Remove previous selection region
       if (regionRef.current && regionRef.current.id !== region.id) {
         regionRef.current.remove();
@@ -95,16 +102,16 @@ export default function WaveformPlayer() {
       setSelection({ startSec: region.start, endSec: region.end });
     });
     regions.on("region-updated", (region) => {
-      if (region.id.startsWith(FILLER_REGION_ID_PREFIX)) return;
+      if (isAiOverlay(region.id)) return;
       regionRef.current = region;
       skipSyncRef.current = true;
       setSelection({ startSec: region.start, endSec: region.end });
     });
-    // Clicking a filler-region overlay previews the snippet (same as the
-    // ▶ button in FillerReviewPanel). Use store.getState() so the handler
+    // Clicking an AI-overlay region previews the snippet (same as the ▶ button
+    // in the matching review panel). Use store.getState() so the handler
     // captures the latest action even though it was registered once at mount.
     regions.on("region-clicked", (region, e) => {
-      if (!region.id.startsWith(FILLER_REGION_ID_PREFIX)) return;
+      if (!isAiOverlay(region.id)) return;
       e.stopPropagation();
       useEditorStore.getState().playRange(region.start, region.end);
     });
@@ -173,6 +180,38 @@ export default function WaveformPlayer() {
       fillerRegionsRef.current.push(region);
     }
   }, [activeFillerReview]);
+
+  // Same idea for profanity overlays — different ID prefix, different color
+  // (orange) so red filler overlays and orange profanity overlays would be
+  // visually distinguishable if both were ever shown simultaneously. In
+  // practice only one panel is mounted at a time via Shell's switch.
+  useEffect(() => {
+    const regions = regionsRef.current;
+    if (!regions) return;
+    for (const r of profanityRegionsRef.current) {
+      try { r.remove(); } catch { /* already removed */ }
+    }
+    profanityRegionsRef.current = [];
+    if (!activeProfanityReview) return;
+    const { result, confidenceThreshold, rejectedWordIndices } = activeProfanityReview;
+    for (const r of result.regions) {
+      const accepted =
+        r.confidence >= confidenceThreshold &&
+        !rejectedWordIndices.has(r.wordIndex);
+      const color = accepted
+        ? "rgba(249, 115, 22, 0.35)"   // orange-500/35 — about-to-be-censored
+        : "rgba(100, 116, 139, 0.15)"; // slate-500/15 — inactive
+      const region = regions.addRegion({
+        id: `${PROFANITY_REGION_ID_PREFIX}${r.wordIndex}`,
+        start: r.start,
+        end: r.end,
+        color,
+        drag: false,
+        resize: false,
+      });
+      profanityRegionsRef.current.push(region);
+    }
+  }, [activeProfanityReview]);
 
   // Sync selection from store (e.g. numeric input changes)
   useEffect(() => {

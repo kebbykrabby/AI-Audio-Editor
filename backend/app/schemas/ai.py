@@ -35,3 +35,30 @@ class FillerDetectionResult(BaseModel):
     regions: list[FillerRegionPayload]
     costUsd: float | None = None
     modelVersion: str
+
+
+# --- Profanity detection (Phase 1: exact matcher only) ----------------------
+
+class DetectProfanityRequest(BaseModel):
+    # Phase 1: no parameters. Phase 4 will add matcher-mode toggles
+    # (exact/variants/phonetic) and a confidence_threshold here.
+    pass
+
+
+class ProfanityRegionPayload(BaseModel):
+    start: float
+    end: float
+    text: str
+    wordIndex: int
+    confidence: float
+    category: str
+    matchedBy: str  # "exact" | "variants" | "phonetic"
+
+
+class ProfanityDetectionResult(BaseModel):
+    transcriptId: str
+    durationSec: float
+    language: str
+    regions: list[ProfanityRegionPayload]
+    costUsd: float | None = None
+    modelVersion: str

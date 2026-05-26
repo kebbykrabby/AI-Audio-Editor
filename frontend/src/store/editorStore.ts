@@ -1,9 +1,16 @@
 import { create } from "zustand";
-import type { Asset, FillerDetectionResult, Selection } from "./types";
+import type {
+  Asset,
+  CensorMode,
+  FillerDetectionResult,
+  ProfanityDetectionResult,
+  Selection,
+} from "./types";
 
 const STORAGE_KEY = "audioEditor.currentAssetId";
 const PENDING_OP_KEY = "audioEditor.pendingOperation";
 const LAST_DETECT_OP_KEY = "audioEditor.lastDetectOperationId";
+const LAST_PROFANITY_OP_KEY = "audioEditor.lastProfanityOperationId";
 
 function persistCurrentAssetId(id: string | null): void {
   try {
@@ -75,6 +82,23 @@ export function readPersistedLastDetectOperationId(): string | null {
   }
 }
 
+function persistLastProfanityOperationId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(LAST_PROFANITY_OP_KEY, id);
+    else localStorage.removeItem(LAST_PROFANITY_OP_KEY);
+  } catch {
+    // fail silently
+  }
+}
+
+export function readPersistedLastProfanityOperationId(): string | null {
+  try {
+    return localStorage.getItem(LAST_PROFANITY_OP_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export interface ActiveFillerReview {
   operationId: string;
   inputAssetId: string;
@@ -83,6 +107,18 @@ export interface ActiveFillerReview {
   // above the confidence threshold.
   rejectedWordIndices: Set<number>;
   confidenceThreshold: number;
+}
+
+export interface ActiveProfanityReview {
+  operationId: string;
+  inputAssetId: string;
+  result: ProfanityDetectionResult;
+  rejectedWordIndices: Set<number>;
+  confidenceThreshold: number;
+  // Phase 2 widens this beyond "beep"; UI selector picks one mode per apply.
+  mode: CensorMode;
+  // Beep tone frequency. UI exposes a selector; default 1 kHz mirrors broadcast.
+  beepHz: number;
 }
 
 interface ChannelEditState {
@@ -105,6 +141,7 @@ interface EditorState {
   warning: string | null;
   channelEdit: ChannelEditState | null;
   activeFillerReview: ActiveFillerReview | null;
+  activeProfanityReview: ActiveProfanityReview | null;
   playbackRequest: { startSec: number; endSec: number; id: number } | null;
 
   currentAsset: () => Asset | null;
@@ -136,6 +173,12 @@ interface EditorState {
   toggleFillerReject: (wordIndex: number) => void;
   setFillerConfidenceThreshold: (threshold: number) => void;
   exitFillerReview: () => void;
+  enterProfanityReview: (review: ActiveProfanityReview) => void;
+  toggleProfanityReject: (wordIndex: number) => void;
+  setProfanityConfidenceThreshold: (threshold: number) => void;
+  setProfanityMode: (mode: CensorMode) => void;
+  setProfanityBeepHz: (hz: number) => void;
+  exitProfanityReview: () => void;
   playRange: (startSec: number, endSec: number) => void;
   reset: () => void;
 }
@@ -155,6 +198,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   warning: null,
   channelEdit: null,
   activeFillerReview: null,
+  activeProfanityReview: null,
   playbackRequest: null,
 
   currentAsset: () => {
@@ -300,6 +344,53 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ activeFillerReview: null });
   },
 
+  enterProfanityReview: (review) => {
+    persistLastProfanityOperationId(review.operationId);
+    set({ activeProfanityReview: review });
+  },
+
+  toggleProfanityReject: (wordIndex) => {
+    const review = get().activeProfanityReview;
+    if (!review) return;
+    const next = new Set(review.rejectedWordIndices);
+    if (next.has(wordIndex)) next.delete(wordIndex);
+    else next.add(wordIndex);
+    set({ activeProfanityReview: { ...review, rejectedWordIndices: next } });
+  },
+
+  setProfanityConfidenceThreshold: (threshold) => {
+    const review = get().activeProfanityReview;
+    if (!review) return;
+    set({
+      activeProfanityReview: {
+        ...review,
+        confidenceThreshold: Math.max(0, Math.min(1, threshold)),
+      },
+    });
+  },
+
+  setProfanityMode: (mode) => {
+    const review = get().activeProfanityReview;
+    if (!review) return;
+    set({ activeProfanityReview: { ...review, mode } });
+  },
+
+  setProfanityBeepHz: (hz) => {
+    const review = get().activeProfanityReview;
+    if (!review) return;
+    set({
+      activeProfanityReview: {
+        ...review,
+        beepHz: Math.max(200, Math.min(8000, Math.round(hz))),
+      },
+    });
+  },
+
+  exitProfanityReview: () => {
+    persistLastProfanityOperationId(null);
+    set({ activeProfanityReview: null });
+  },
+
   playRange: (startSec, endSec) =>
     set({ playbackRequest: { startSec, endSec, id: Date.now() } }),
 
@@ -317,10 +408,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       warning: null,
       channelEdit: null,
       activeFillerReview: null,
+      activeProfanityReview: null,
       playbackRequest: null,
     });
     clearPersistedAssetId();
     clearPersistedPendingOp();
     persistLastDetectOperationId(null);
+    persistLastProfanityOperationId(null);
   },
 }));

@@ -10,6 +10,7 @@ import SelectionInfo from "../editor/SelectionInfo";
 import OperationPanel from "../editor/OperationPanel";
 import ChannelEditor from "../editor/ChannelEditor";
 import FillerReviewPanel from "../editor/FillerReviewPanel";
+import ProfanityReviewPanel from "../editor/ProfanityReviewPanel";
 
 function Workspace() {
   const { isRestoring } = useRestoreSession();
@@ -21,6 +22,7 @@ function Workspace() {
   const setWarning = useEditorStore((s) => s.setWarning);
   const channelEdit = useEditorStore((s) => s.channelEdit);
   const activeFillerReview = useEditorStore((s) => s.activeFillerReview);
+  const activeProfanityReview = useEditorStore((s) => s.activeProfanityReview);
 
   if (isRestoring) {
     return (
@@ -80,7 +82,13 @@ function Workspace() {
               <WaveformPlayer />
             </WaveformErrorBoundary>
             <SelectionInfo />
-            {activeFillerReview ? <FillerReviewPanel /> : <OperationPanel />}
+            {activeFillerReview ? (
+              <FillerReviewPanel />
+            ) : activeProfanityReview ? (
+              <ProfanityReviewPanel />
+            ) : (
+              <OperationPanel />
+            )}
           </>
         )}
       </div>

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { getAsset } from "../api/assets";
 import { getOperation } from "../api/operations";
-import type { Asset, FillerDetectionResult } from "./types";
+import type { Asset, FillerDetectionResult, ProfanityDetectionResult } from "./types";
 import {
   clearPersistedAssetId,
   clearPersistedPendingOp,
   readPersistedAssetId,
   readPersistedLastDetectOperationId,
+  readPersistedLastProfanityOperationId,
   readPersistedPendingOp,
   useEditorStore,
 } from "./editorStore";
@@ -75,6 +76,7 @@ export function useRestoreSession(): { isRestoring: boolean } {
         // completed AND its input asset is the current tip, re-enter review mode
         // without a second transcription.
         await restoreFillerReview(tip);
+        await restoreProfanityReview(tip);
       } catch {
         clearPersistedAssetId();
         clearPersistedPendingOp();
@@ -105,6 +107,30 @@ async function restoreFillerReview(tip: Asset | null): Promise<void> {
       result,
       rejectedWordIndices: new Set(),
       confidenceThreshold: 0.7,
+    });
+  } catch {
+    // Stale / deleted / cross-user → silently ignore.
+  }
+}
+
+async function restoreProfanityReview(tip: Asset | null): Promise<void> {
+  const lastId = readPersistedLastProfanityOperationId();
+  if (!lastId || !tip) return;
+  try {
+    const op = await getOperation(lastId);
+    if (op.status !== "completed" || !op.result) return;
+    const result = op.result as ProfanityDetectionResult;
+    if (result.durationSec !== tip.durationSec) return;
+    useEditorStore.getState().enterProfanityReview({
+      operationId: lastId,
+      inputAssetId: tip.assetId,
+      result,
+      rejectedWordIndices: new Set(),
+      // Per D4: slider is hidden while phonetic is off (Phase 1 always off).
+      // Default keeps everything visible.
+      confidenceThreshold: 0.0,
+      mode: "beep",
+      beepHz: 1000,
     });
   } catch {
     // Stale / deleted / cross-user → silently ignore.
