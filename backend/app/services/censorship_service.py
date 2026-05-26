@@ -62,6 +62,61 @@ def _normalize(text: str) -> str:
     return _PUNCT_RE.sub("", text).lower()
 
 
+def normalize_user_words(words: list[str] | None) -> list[str]:
+    """Normalize a user-supplied list: lowercase, strip punctuation, drop
+    empties + duplicates, preserve insertion order.
+
+    Use this on input from the CRUD endpoint before persisting so the stored
+    list always matches what the matcher will see.
+    """
+    if not words:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for w in words:
+        n = _normalize(w)
+        if not n or n in seen:
+            continue
+        seen.add(n)
+        out.append(n)
+    return out
+
+
+def get_words_state(user_overrides: dict | None) -> dict[str, list[str]]:
+    """Return the user's word-list state in the shape the CRUD endpoint emits.
+
+    Defensive against legacy or malformed JSON: missing fields default to [].
+    """
+    overrides = user_overrides or {}
+    return {
+        "builtIn": sorted(BUILT_IN),
+        "added": list(overrides.get("added") or []),
+        "removed": list(overrides.get("removed") or []),
+    }
+
+
+def merge_words_update(
+    user_overrides: dict | None,
+    added: list[str] | None,
+    removed: list[str] | None,
+) -> dict[str, list[str]]:
+    """Apply a partial CRUD update.
+
+    `added` and `removed` are full replacements when present; None leaves the
+    existing field alone. Both lists are normalized before storing.
+    """
+    overrides = dict(user_overrides or {})
+    if added is not None:
+        overrides["added"] = normalize_user_words(added)
+    if removed is not None:
+        # Drop anything the user "removes" that isn't actually a built-in —
+        # otherwise the removed list grows with no effect.
+        overrides["removed"] = [
+            w for w in normalize_user_words(removed) if w in BUILT_IN
+        ]
+    return overrides
+
+
 def effective_word_set(
     user_added: list[str] | None = None,
     user_removed: list[str] | None = None,

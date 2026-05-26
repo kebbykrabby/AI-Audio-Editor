@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { detectFillers, detectProfanity } from "../api/ai";
+import CensorshipSettingsModal from "./CensorshipSettingsModal";
 import { ApiRequestError } from "../api/client";
 import { enqueueOperation, pollOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
@@ -38,6 +39,7 @@ export default function OperationPanel() {
   const enterProfanityReview = useEditorStore((s) => s.enterProfanityReview);
   const [detecting, setDetecting] = useState(false);
   const [detectingProfanity, setDetectingProfanity] = useState(false);
+  const [censorshipSettingsOpen, setCensorshipSettingsOpen] = useState(false);
 
   const [fadeDuration, setFadeDuration] = useState(1.0);
   const [fadeCurve, setFadeCurve] = useState<"linear" | "exponential">("linear");
@@ -467,7 +469,19 @@ export default function OperationPanel() {
         >
           {detectingProfanity ? "Transcribing…" : "Censor profanity"}
         </button>
+        <button
+          onClick={() => setCensorshipSettingsOpen(true)}
+          className="op-btn px-2"
+          title="Edit censorship word list"
+          aria-label="Edit censorship word list"
+        >
+          ⚙
+        </button>
       </div>
+      <CensorshipSettingsModal
+        open={censorshipSettingsOpen}
+        onClose={() => setCensorshipSettingsOpen(false)}
+      />
 
       {!selection && (
         <p className="text-xs text-slate-500 mt-2">Select a region on the waveform to use Trim and Delete</p>

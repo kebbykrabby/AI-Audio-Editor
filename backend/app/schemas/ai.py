@@ -62,3 +62,23 @@ class ProfanityDetectionResult(BaseModel):
     regions: list[ProfanityRegionPayload]
     costUsd: float | None = None
     modelVersion: str
+
+
+# --- Censorship word-list overrides (Phase 3) -----------------------------
+
+class CensorshipWordsResponse(BaseModel):
+    """Effective state of the user's censorship word list.
+
+    `builtIn` is the curated list every user starts with. `added` are
+    user-contributed words (always censored). `removed` are built-ins the
+    user has chosen to exclude. Effective set = (builtIn - removed) ∪ added.
+    """
+    builtIn: list[str]
+    added: list[str]
+    removed: list[str]
+
+
+class CensorshipWordsUpdate(BaseModel):
+    """Partial update — fields not present leave the existing values alone."""
+    added: list[str] | None = None
+    removed: list[str] | None = None
