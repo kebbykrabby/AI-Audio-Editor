@@ -1,5 +1,15 @@
+export interface User {
+  userId: string;
+  email: string | null;
+  phoneNumber: string | null;
+  displayName: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+}
+
 export interface Asset {
   assetId: string;
+  userId: string;
   type: "original" | "derived";
   status: "processing" | "ready" | "failed";
   parentAssetId: string | null;
@@ -8,6 +18,8 @@ export interface Asset {
   durationSec: number | null;
   sampleRate: number | null;
   channels: number | null;
+  filename: string | null;
+  error?: ApiError["error"];
 }
 
 export interface Selection {
@@ -15,18 +27,59 @@ export interface Selection {
   endSec: number;
 }
 
-export interface OperationResponse {
-  operationId: string;
-  status: string;
-  warning: string | null;
-  asset: Asset;
+export type OperationStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface FillerRegion {
+  start: number;
+  end: number;
+  text: string;
+  category: string;
+  confidence: number;
+  wordIndex: number;
 }
 
+export interface FillerDetectionResult {
+  transcriptId: string;
+  durationSec: number;
+  language: string;
+  regions: FillerRegion[];
+  costUsd?: number | null;
+  modelVersion: string;
+}
+
+export interface OperationResponse {
+  operationId: string;
+  status: OperationStatus;
+  warning?: string | null;
+  asset?: Asset | null;
+  secondaryAsset?: Asset | null;
+  error?: ApiError["error"];
+  // AI ops (ai_detect_fillers) populate this; deterministic ops leave it absent.
+  result?: FillerDetectionResult | null;
+}
+
+export type ExportStatus = "queued" | "running" | "completed" | "failed";
+
 export interface ExportResponse {
-  downloadUrl: string;
+  exportId: string;
+  status: ExportStatus;
   format: string;
-  sampleRate: number;
-  channels: number;
+  sampleRate?: number | null;
+  bitrateKbps?: number | null;
+  channels?: number | null;
+  downloadUrl?: string | null;
+  error?: ApiError["error"];
+}
+
+export interface TokenResponse {
+  accessToken: string;
+  expiresIn: number;
+  user: User;
 }
 
 export interface ApiError {

@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+
+from app.schemas.error import ErrorBody
 
 
 class ExportRequest(BaseModel):
@@ -10,7 +12,11 @@ class ExportRequest(BaseModel):
 
 
 class ExportResponse(BaseModel):
-    downloadUrl: str
+    exportId: str
+    status: str  # "queued" | "running" | "completed" | "failed"
     format: str
-    sampleRate: int
-    channels: int
+    sampleRate: int | None = None
+    bitrateKbps: int | None = None
+    channels: int | None = None
+    downloadUrl: str | None = None
+    error: ErrorBody | None = None

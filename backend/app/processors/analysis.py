@@ -1,4 +1,5 @@
 import asyncio
+import subprocess
 from pathlib import Path
 
 
@@ -8,15 +9,19 @@ async def detect_peak_db(audio_path: Path) -> float:
     Uses stream processing — does not load the full file into memory.
     Returns peak level in dBFS (0.0 = full scale, negative = below).
     """
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-i", str(audio_path),
-        "-af", "astats=metadata=0",
-        "-f", "null", "-",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-    output = stderr.decode()
+    def _run():
+        return subprocess.run(
+            ["ffmpeg", "-i", str(audio_path),
+             "-af", "astats=metadata=0",
+             "-f", "null", "-"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, _run)
+    output = result.stderr.decode()
 
     for line in output.split("\n"):
         if "Peak level dB" in line:

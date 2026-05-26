@@ -10,6 +10,7 @@ class UploadResponse(BaseModel):
 
 class AssetResponse(BaseModel):
     assetId: str
+    userId: str
     type: str
     status: str
     parentAssetId: str | None
@@ -18,4 +19,5 @@ class AssetResponse(BaseModel):
     durationSec: float | None
     sampleRate: int | None
     channels: int | None
+    filename: str | None
     error: ErrorBody | None = None

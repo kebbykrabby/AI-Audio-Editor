@@ -2,12 +2,16 @@ import { useEffect, useRef, useCallback, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
 import { useEditorStore } from "../store/editorStore";
+import { useAssetUrlRefresh } from "./useAssetUrlRefresh";
+
+const FILLER_REGION_ID_PREFIX = "filler-";
 
 export default function WaveformPlayer() {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
   const regionRef = useRef<Region | null>(null);
+  const fillerRegionsRef = useRef<Region[]>([]);
   const skipSyncRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -18,6 +22,13 @@ export default function WaveformPlayer() {
   const selection = useEditorStore((s) => s.selection);
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const currentTimeSec = useEditorStore((s) => s.currentTimeSec);
+  const playbackRequest = useEditorStore((s) => s.playbackRequest);
+  const activeFillerReview = useEditorStore((s) => s.activeFillerReview);
+
+  // Pre-emptive URL refresh so signed URLs don't expire mid-session.
+  // Also exposes refreshNow() for media-error recovery.
+  const { refreshNow } = useAssetUrlRefresh(asset?.assetId ?? null);
+  const recoveringRef = useRef(false);
 
   // Initialize WaveSurfer
   useEffect(() => {
@@ -58,10 +69,23 @@ export default function WaveformPlayer() {
     ws.on("play", () => setPlaying(true));
     ws.on("pause", () => setPlaying(false));
     ws.on("timeupdate", (time) => setCurrentTime(time));
+    // If the browser rejects the media (most likely a 403 from an expired
+    // signed URL), request a fresh asset. The store update rotates audioUrl,
+    // which re-triggers the init effect above and reloads WaveSurfer.
+    ws.on("error", () => {
+      if (recoveringRef.current) return;
+      recoveringRef.current = true;
+      void refreshNow().finally(() => {
+        recoveringRef.current = false;
+      });
+    });
 
     // Region selection
     regions.enableDragSelection({ color: "rgba(59, 130, 246, 0.3)" });
     regions.on("region-created", (region) => {
+      // AI-detected filler regions are owned by the activeFillerReview effect;
+      // they must not be treated as the user's drag-selection.
+      if (region.id.startsWith(FILLER_REGION_ID_PREFIX)) return;
       // Remove previous selection region
       if (regionRef.current && regionRef.current.id !== region.id) {
         regionRef.current.remove();
@@ -71,9 +95,18 @@ export default function WaveformPlayer() {
       setSelection({ startSec: region.start, endSec: region.end });
     });
     regions.on("region-updated", (region) => {
+      if (region.id.startsWith(FILLER_REGION_ID_PREFIX)) return;
       regionRef.current = region;
       skipSyncRef.current = true;
       setSelection({ startSec: region.start, endSec: region.end });
+    });
+    // Clicking a filler-region overlay previews the snippet (same as the
+    // ▶ button in FillerReviewPanel). Use store.getState() so the handler
+    // captures the latest action even though it was registered once at mount.
+    regions.on("region-clicked", (region, e) => {
+      if (!region.id.startsWith(FILLER_REGION_ID_PREFIX)) return;
+      e.stopPropagation();
+      useEditorStore.getState().playRange(region.start, region.end);
     });
 
     wsRef.current = ws;
@@ -93,6 +126,53 @@ export default function WaveformPlayer() {
     if (isPlaying && !ws.isPlaying()) ws.play().catch(() => {});
     if (!isPlaying && ws.isPlaying()) ws.pause();
   }, [isPlaying]);
+
+  // Play a single range on demand (filler-region preview). The `id` field
+  // changes on every request so identical (start,end) repeats still fire.
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws || !playbackRequest) return;
+    ws.setTime(playbackRequest.startSec);
+    ws.play().catch(() => {});
+    const lengthMs = Math.max(0, playbackRequest.endSec - playbackRequest.startSec) * 1000;
+    const timer = window.setTimeout(() => {
+      if (wsRef.current?.isPlaying()) wsRef.current.pause();
+    }, lengthMs + 50);
+    return () => window.clearTimeout(timer);
+  }, [playbackRequest?.id]);
+
+  // Draw the AI-detected filler regions as colored overlays on the waveform.
+  // Wipe-and-redraw on every relevant state change (review enter/exit,
+  // confidence-threshold change, accept/reject toggle) — region counts are
+  // small enough (< low hundreds) that diffing isn't worth the complexity.
+  useEffect(() => {
+    const regions = regionsRef.current;
+    if (!regions) return;
+    // Cleanup previous overlays.
+    for (const r of fillerRegionsRef.current) {
+      try { r.remove(); } catch { /* already removed */ }
+    }
+    fillerRegionsRef.current = [];
+    if (!activeFillerReview) return;
+    const { result, confidenceThreshold, rejectedWordIndices } = activeFillerReview;
+    for (const r of result.regions) {
+      const accepted =
+        r.confidence >= confidenceThreshold &&
+        !rejectedWordIndices.has(r.wordIndex);
+      const color = accepted
+        ? "rgba(239, 68, 68, 0.35)"   // red-500/35 — about-to-be-cut
+        : "rgba(100, 116, 139, 0.15)"; // slate-500/15 — inactive
+      const region = regions.addRegion({
+        id: `${FILLER_REGION_ID_PREFIX}${r.wordIndex}`,
+        start: r.start,
+        end: r.end,
+        color,
+        drag: false,
+        resize: false,
+      });
+      fillerRegionsRef.current.push(region);
+    }
+  }, [activeFillerReview]);
 
   // Sync selection from store (e.g. numeric input changes)
   useEffect(() => {

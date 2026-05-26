@@ -1,18 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "audio-editor/operations.schema.json",
-  "title": "Audio Editor Operation (V1)",
+  "title": "Audio Editor Operation (V2)",
   "description": "Schema for a single audio edit operation. Uses discriminated union on 'type' for per-operation parameter validation.",
   "type": "object",
-  "required": ["type", "input_asset_id", "parameters"],
+  "required": ["type", "parameters"],
   "properties": {
     "type": {
       "type": "string",
-      "enum": ["trim", "delete", "fade_in", "fade_out", "gain", "normalize"]
-    },
-    "input_asset_id": {
-      "type": "string",
-      "pattern": "^ast_[A-Za-z0-9_-]{3,64}$"
+      "enum": ["trim", "delete", "fade_in", "fade_out", "gain", "normalize", "reverse", "remove_silence", "extract_channel", "swap_channels", "mono_mixdown", "speed"]
     },
     "parameters": {
       "type": "object"
@@ -134,6 +130,105 @@
             "required": ["target_db"],
             "properties": {
               "target_db": { "type": "number", "minimum": -60, "maximum": 0 }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "reverse" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "remove_silence" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "threshold_db": { "type": "number", "minimum": -80, "maximum": 0, "default": -40 },
+              "min_silence_sec": { "type": "number", "exclusiveMinimum": 0, "maximum": 10, "default": 0.5 }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "extract_channel" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "required": ["channel"],
+            "properties": {
+              "channel": { "type": "string", "enum": ["left", "right"] }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "swap_channels" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "mono_mixdown" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "type": { "const": "speed" } },
+        "required": ["type"]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "required": ["factor"],
+            "properties": {
+              "factor": { "type": "number", "minimum": 0.25, "maximum": 4.0 }
             },
             "additionalProperties": false
           }

@@ -1,4 +1,4 @@
-# API Contract (V1)
+# API Contract (V2)
 
 ## Upload
 POST /api/assets/upload
@@ -89,13 +89,12 @@ Notes:
 ---
 
 ## Execute Operation
-POST /api/operations
+POST /api/assets/{id}/operations
 
 Request:
 ```json
 {
   "type": "trim",
-  "input_asset_id": "ast_123",
   "parameters": {
     "start_sec": 5.2,
     "end_sec": 12.7
@@ -103,7 +102,7 @@ Request:
 }
 ```
 
-Request body must conform to operations.schema.json.
+The asset ID is specified in the URL path. Request body parameters must conform to operations.schema.json.
 
 ### Operation Semantics
 | Type | Behavior |
@@ -114,6 +113,12 @@ Request body must conform to operations.schema.json.
 | fade_out | Apply volume ramp from full volume to silence over `duration_sec` at the end of the audio. |
 | gain | Adjust amplitude by `gain_db` decibels across the entire audio. |
 | normalize | Peak normalization: scale audio so the peak amplitude matches `target_db`. |
+| reverse | Reverse the entire audio. Output duration equals input duration. No parameters. |
+| remove_silence | Remove portions below threshold. Parameters: `threshold_db` (default -40), `min_silence_sec` (default 0.5). Output duration ≤ input duration. |
+| extract_channel | Extract left or right channel from stereo to mono. Requires stereo input (channels=2). Parameter: `channel` ("left" or "right"). Output is mono. |
+| swap_channels | Swap left and right channels. Requires stereo input (channels=2). No parameters. Output preserves stereo. |
+| mono_mixdown | Mix stereo audio down to mono ((L+R)/2). Requires stereo input (channels=2). No parameters. Output is mono. |
+| speed | Change playback speed by `factor` (0.25×–4.0×) with pitch preservation via FFmpeg atempo. Output duration = input_duration / factor. |
 
 Response (200 OK):
 ```json
@@ -152,22 +157,43 @@ Response with clipping warning (gain operation):
 }
 ```
 
+V2 example requests:
+```json
+// reverse
+{"type": "reverse", "parameters": {}}
+
+// remove_silence
+{"type": "remove_silence", "parameters": {"threshold_db": -40, "min_silence_sec": 0.5}}
+
+// extract_channel
+{"type": "extract_channel", "parameters": {"channel": "left"}}
+
+// swap_channels
+{"type": "swap_channels", "parameters": {}}
+
+// mono_mixdown
+{"type": "mono_mixdown", "parameters": {}}
+
+// speed
+{"type": "speed", "parameters": {"factor": 1.5}}
+```
+
 Notes:
 - `operationId` is server-generated (used for logging, debugging, future undo-by-operation)
 - `status` is `"completed"` in V1 (synchronous). Future async migration will return `"processing"`.
 - Operations are synchronous in V1: the request blocks until processing finishes. Server-side timeout: 30 seconds.
-- Operations must preserve channel count and sample rate by default.
+- Operations must preserve channel count and sample rate by default, unless the operation explicitly changes them (extract_channel, mono_mixdown).
 - `warning` field is optional, present when the processor detects issues (e.g., clipping).
+- Channel operations (extract_channel, swap_channels, mono_mixdown) require stereo input; return INVALID_PARAMETERS (422) if the asset is mono.
 
 ---
 
 ## Export
-POST /api/export
+POST /api/assets/{id}/export
 
 Request:
 ```json
 {
-  "asset_id": "ast_456",
   "format": "mp3",
   "sample_rate": 44100,
   "bitrate_kbps": 320
@@ -253,6 +279,19 @@ These constraints cannot be expressed in JSON Schema and must be enforced by the
 | `start_sec < asset.durationSec` | trim, delete | "start_sec exceeds audio duration" |
 | `duration_sec <= asset.durationSec` | fade_in, fade_out | "fade duration exceeds audio duration" |
 
+### Channel Constraint Rules
+| Rule | Applies To | Error |
+|------|-----------|-------|
+| Asset must have channels ≥ 2 | extract_channel, swap_channels | "{op_type} requires stereo audio (2 channels)" |
+| Asset must have channels ≥ 2 | mono_mixdown | "mono_mixdown requires stereo audio (2 channels)" |
+
+### Parameter Range Rules
+| Rule | Applies To | Error |
+|------|-----------|-------|
+| `0.25 <= factor <= 4.0` | speed | Schema validation (422) |
+| `-80 <= threshold_db <= 0` | remove_silence | Schema validation (422) |
+| `0 < min_silence_sec <= 10` | remove_silence | Schema validation (422) |
+
 ### Output Validity Rules
 | Rule | Applies To | Error |
 |------|-----------|-------|
@@ -270,6 +309,36 @@ These constraints cannot be expressed in JSON Schema and must be enforced by the
 - Backend must configure CORS middleware to allow the frontend origin
 - Max request body size: 100MB (configure in FastAPI and any reverse proxy)
 - Uploads over 100MB are rejected at the middleware level before buffering
+
+---
+
+## Preview Operations (V2+)
+
+The following operations are implemented but not part of the formal V2 contract. They may change in future versions.
+
+### split_channels
+POST /api/assets/{id}/operations
+```json
+{"type": "split_channels", "parameters": {}}
+```
+Splits a stereo asset into two mono assets (left and right channels). Requires stereo input.
+Response includes a `secondaryAsset` field alongside the primary `asset`:
+```json
+{
+  "operationId": "op_...",
+  "status": "completed",
+  "asset": { "assetId": "ast_left", "channels": 1, ... },
+  "secondaryAsset": { "assetId": "ast_right", "channels": 1, ... }
+}
+```
+The `secondaryAsset` field is `null` for all standard V2 operations.
+
+### merge_channels
+POST /api/assets/{id}/operations
+```json
+{"type": "merge_channels", "parameters": {"right_asset_id": "ast_right"}}
+```
+Merges two mono assets into one stereo asset. The URL asset is used as the left channel; `right_asset_id` specifies the right channel.
 
 ---
 

@@ -3,6 +3,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 from app.schemas.asset import AssetResponse
+from app.schemas.error import ErrorBody
 
 
 # --- Parameter models per operation type ---
@@ -33,6 +34,49 @@ class GainParams(BaseModel):
 
 class NormalizeParams(BaseModel):
     target_db: float = Field(ge=-60, le=0)
+
+
+class ReverseParams(BaseModel):
+    pass
+
+
+class RemoveSilenceParams(BaseModel):
+    threshold_db: float = Field(ge=-80, le=0, default=-40)
+    min_silence_sec: float = Field(gt=0, le=10, default=0.5)
+
+
+class ExtractChannelParams(BaseModel):
+    channel: Literal["left", "right"]
+
+
+class SwapChannelsParams(BaseModel):
+    pass
+
+
+class MonoMixdownParams(BaseModel):
+    pass
+
+
+class SpeedParams(BaseModel):
+    factor: float = Field(ge=0.25, le=4.0)
+
+
+class SplitChannelsParams(BaseModel):
+    pass
+
+
+class MergeChannelsParams(BaseModel):
+    right_asset_id: str
+
+
+class RemoveSegmentsInterval(BaseModel):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+
+
+class RemoveSegmentsParams(BaseModel):
+    intervals: list[RemoveSegmentsInterval] = Field(min_length=1, max_length=500)
+    crossfade_ms: float = Field(ge=5, le=100, default=20.0)
 
 
 # --- Operation request models (discriminated union) ---
@@ -67,13 +111,67 @@ class NormalizeOperation(BaseModel):
     parameters: NormalizeParams
 
 
+class ReverseOperation(BaseModel):
+    type: Literal["reverse"]
+    parameters: ReverseParams
+
+
+class RemoveSilenceOperation(BaseModel):
+    type: Literal["remove_silence"]
+    parameters: RemoveSilenceParams
+
+
+class ExtractChannelOperation(BaseModel):
+    type: Literal["extract_channel"]
+    parameters: ExtractChannelParams
+
+
+class SwapChannelsOperation(BaseModel):
+    type: Literal["swap_channels"]
+    parameters: SwapChannelsParams
+
+
+class MonoMixdownOperation(BaseModel):
+    type: Literal["mono_mixdown"]
+    parameters: MonoMixdownParams
+
+
+class SpeedOperation(BaseModel):
+    type: Literal["speed"]
+    parameters: SpeedParams
+
+
+class SplitChannelsOperation(BaseModel):
+    type: Literal["split_channels"]
+    parameters: SplitChannelsParams
+
+
+class MergeChannelsOperation(BaseModel):
+    type: Literal["merge_channels"]
+    parameters: MergeChannelsParams
+
+
+class RemoveSegmentsOperation(BaseModel):
+    type: Literal["remove_segments"]
+    parameters: RemoveSegmentsParams
+
+
 OperationRequest = Annotated[
     TrimOperation
     | DeleteOperation
     | FadeInOperation
     | FadeOutOperation
     | GainOperation
-    | NormalizeOperation,
+    | NormalizeOperation
+    | ReverseOperation
+    | RemoveSilenceOperation
+    | ExtractChannelOperation
+    | SwapChannelsOperation
+    | MonoMixdownOperation
+    | SpeedOperation
+    | SplitChannelsOperation
+    | MergeChannelsOperation
+    | RemoveSegmentsOperation,
     Field(discriminator="type"),
 ]
 
@@ -82,6 +180,12 @@ OperationRequest = Annotated[
 
 class OperationResponse(BaseModel):
     operationId: str
-    status: str
+    status: str  # "queued" | "running" | "completed" | "failed" | "cancelled"
     warning: str | None = None
-    asset: AssetResponse
+    asset: AssetResponse | None = None
+    secondaryAsset: AssetResponse | None = None
+    error: ErrorBody | None = None
+    # For AI ops (ai_detect_fillers) that return structured data rather than an
+    # asset. None for deterministic ops. Shape is op-type-specific; the client
+    # uses the op's `type` to interpret.
+    result: dict | None = None

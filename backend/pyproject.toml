@@ -1,20 +1,39 @@
 [project]
 name = "audio-editor-backend"
-version = "0.1.0"
+version = "0.2.5"
 description = "AI Audio Editor - FastAPI Backend"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi[standard]>=0.115",
     "sqlalchemy>=2.0",
-    "aiosqlite>=0.20",
+    "asyncpg>=0.29",
+    "psycopg[binary]>=3.1",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "python-multipart",
     "numpy",
+    "argon2-cffi>=23.1",
+    "pyjwt[crypto]>=2.8",
+    "httpx>=0.27",
+    "email-validator>=2.0",
+    "aioboto3>=13.0",
+    "dramatiq[redis]>=1.17",
+    "faster-whisper>=1.0",
 ]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+markers = [
+    "s3: tests that require S3/MinIO (set S3_TEST_ENABLED=1 to run)",
+    "pg: tests that require real Postgres (set PG_TEST_ENABLED=1 to run)",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -23,9 +42,5 @@ dev = [
     "httpx",
     "ruff",
     "mypy",
-]
-postgres = [
-    "asyncpg",
-    "psycopg2-binary",
-    "alembic>=1.13",
+    "aiosqlite>=0.20",
 ]
