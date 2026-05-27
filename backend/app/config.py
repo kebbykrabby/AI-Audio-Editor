@@ -96,6 +96,23 @@ class Settings(BaseSettings):
     AI_OPS_PER_DAY_PER_USER: int = 20
     AI_OPS_PER_HOUR_PER_IP: int = 10
 
+    # --- Natural-language editing (NLE) ---
+    # "fake"      = FakeLLMProvider (default; offline + tests)
+    # "gemini"    = GeminiLLMProvider (Google AI Studio free tier; MVP default real provider)
+    # "anthropic" / "openai" = Phase-5 providers (require their respective keys)
+    LLM_PROVIDER: str = "fake"
+    GEMINI_API_KEY: str | None = None
+    GEMINI_MODEL: str = "gemini-2.0-flash-exp"
+    ANTHROPIC_API_KEY: str | None = None
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
+    # OPENAI_API_KEY (declared above for Whisper) is reused for chat models.
+    OPENAI_LLM_MODEL: str = "gpt-4o"
+    # Per-plan USD cost ceiling. Admission rejects above this. Small by default
+    # because prompts are short and the MVP provider (Gemini Flash) is free-tier.
+    NLE_PER_PLAN_USD: float = 0.10
+    # Plan-generation cap on tool calls (defense against runaway chains).
+    NLE_MAX_TOOL_CALLS: int = 10
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
