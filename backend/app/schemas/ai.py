@@ -66,8 +66,17 @@ class ProfanityDetectionResult(BaseModel):
 
 # --- Censorship word-list overrides (Phase 3) -----------------------------
 
+class CensorshipMatchers(BaseModel):
+    """Which matchers run during profanity detection. Exact is always on
+    (toggling it off would make the feature do nothing). Variants is on by
+    default. Phonetic is off by default because false-positive risk is real.
+    """
+    variants: bool = True
+    phonetic: bool = False
+
+
 class CensorshipWordsResponse(BaseModel):
-    """Effective state of the user's censorship word list.
+    """Effective state of the user's censorship word list + matcher toggles.
 
     `builtIn` is the curated list every user starts with. `added` are
     user-contributed words (always censored). `removed` are built-ins the
@@ -76,9 +85,11 @@ class CensorshipWordsResponse(BaseModel):
     builtIn: list[str]
     added: list[str]
     removed: list[str]
+    matchers: CensorshipMatchers = CensorshipMatchers()
 
 
 class CensorshipWordsUpdate(BaseModel):
     """Partial update — fields not present leave the existing values alone."""
     added: list[str] | None = None
     removed: list[str] | None = None
+    matchers: CensorshipMatchers | None = None

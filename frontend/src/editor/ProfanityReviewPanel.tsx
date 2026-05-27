@@ -40,6 +40,7 @@ export default function ProfanityReviewPanel() {
   const toggleReject = useEditorStore((s) => s.toggleProfanityReject);
   const setMode = useEditorStore((s) => s.setProfanityMode);
   const setBeepHz = useEditorStore((s) => s.setProfanityBeepHz);
+  const setThreshold = useEditorStore((s) => s.setProfanityConfidenceThreshold);
   const exitReview = useEditorStore((s) => s.exitProfanityReview);
   const pushAsset = useEditorStore((s) => s.pushAsset);
   const setPendingOperation = useEditorStore((s) => s.setPendingOperation);
@@ -63,6 +64,10 @@ export default function ProfanityReviewPanel() {
 
   const regions = review.result.regions;
   const total = regions.length;
+  // D4: show the confidence floor slider only when the detection produced any
+  // non-exact match. Exact-only results have confidence=1.0 across the board
+  // so the slider would do nothing.
+  const hasNonExactMatches = regions.some((r) => r.matchedBy !== "exact");
 
   const handleCommit = async () => {
     if (accepted.length === 0) {
@@ -184,6 +189,28 @@ export default function ProfanityReviewPanel() {
           {MODE_DESCRIPTIONS[review.mode]}
         </p>
       </div>
+
+      {hasNonExactMatches && (
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-slate-500" htmlFor="profanity-confidence">
+            Confidence floor
+          </label>
+          <input
+            id="profanity-confidence"
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={review.confidenceThreshold}
+            onChange={(e) => setThreshold(Number(e.target.value))}
+            className="w-56"
+            disabled={committing}
+          />
+          <span className="text-xs text-slate-300 w-10">
+            {review.confidenceThreshold.toFixed(2)}
+          </span>
+        </div>
+      )}
 
       {total === 0 ? (
         <p className="text-sm text-slate-400">

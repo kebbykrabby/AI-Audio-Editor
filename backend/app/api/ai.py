@@ -116,7 +116,10 @@ async def update_censorship_words(
     built-ins.
     """
     merged = censorship_service.merge_words_update(
-        user.censorship_words, added=body.added, removed=body.removed,
+        user.censorship_words,
+        added=body.added,
+        removed=body.removed,
+        matchers=body.matchers.model_dump() if body.matchers else None,
     )
     user.censorship_words = merged
     db.add(user)

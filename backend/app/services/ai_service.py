@@ -418,22 +418,24 @@ async def _run_ai_detect_profanity_job_async(db: Session, operation_id: str) -> 
                 "No speech detected in the audio",
             )
 
-        # Build the effective word set for this user.
-        # Per D2: phonetic match (Phase 4) will distinguish builtin vs user-added,
-        # but exact-match Phase 1 uses the union.
+        # Read the user's overrides + matcher toggles.
         user_overrides = (db.get(User, op.user_id).censorship_words or {}) if op.user_id else {}
         added = user_overrides.get("added") or []
         removed = user_overrides.get("removed") or []
-        word_set = censorship_service.effective_word_set(
-            user_added=added, user_removed=removed,
-        )
+        matchers = censorship_service.get_matchers(user_overrides)
 
         # Per D3: English-only MVP. If the transcript isn't English AND the user
         # has no overrides (so we have nothing language-agnostic to match), skip.
         if transcript.language != "en" and not added:
             regions = []
         else:
-            regions = censorship_service.detect_profanity(transcript, word_set)
+            regions = censorship_service.detect_profanity_full(
+                transcript,
+                user_added=added,
+                user_removed=removed,
+                variants_enabled=matchers["variants"],
+                phonetic_enabled=matchers["phonetic"],
+            )
 
         result = ProfanityDetectionResult(
             transcriptId=analysis_row.id,

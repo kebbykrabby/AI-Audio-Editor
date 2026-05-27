@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   getCensorshipWords,
   updateCensorshipWords,
+  type CensorshipMatchers,
   type CensorshipWordsState,
 } from "../api/censorship";
 
@@ -24,6 +25,10 @@ export default function CensorshipSettingsModal({ open, onClose }: Props) {
   const [state, setState] = useState<CensorshipWordsState | null>(null);
   const [addedText, setAddedText] = useState("");
   const [removedSet, setRemovedSet] = useState<Set<string>>(new Set());
+  const [matchers, setMatchers] = useState<CensorshipMatchers>({
+    variants: true,
+    phonetic: false,
+  });
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +42,7 @@ export default function CensorshipSettingsModal({ open, onClose }: Props) {
         setState(s);
         setAddedText(s.added.join("\n"));
         setRemovedSet(new Set(s.removed));
+        setMatchers(s.matchers);
       })
       .catch((e) =>
         setError(e instanceof Error ? e.message : "Failed to load word list"),
@@ -63,6 +69,7 @@ export default function CensorshipSettingsModal({ open, onClose }: Props) {
       const next = await updateCensorshipWords({
         added: addedList,
         removed: removedList,
+        matchers,
       });
       setState(next);
       onClose();
@@ -163,6 +170,51 @@ export default function CensorshipSettingsModal({ open, onClose }: Props) {
                   );
                 })}
               </ul>
+            </section>
+
+            <section>
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">
+                Matchers
+              </h4>
+              <p className="text-xs text-slate-500 mb-2">
+                Exact matching is always on. Variants catches inflected forms
+                (running, ran, runs). Phonetic catches sound-alike
+                mistranscriptions — applied only to your custom words to avoid
+                false positives like "duck" sounding like a built-in word.
+              </p>
+              <div className="flex flex-col gap-1.5 text-xs">
+                <label className="flex items-center gap-2 text-slate-500">
+                  <input type="checkbox" checked disabled />
+                  <span>Exact (always on)</span>
+                </label>
+                <label className="flex items-center gap-2 text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={matchers.variants}
+                    onChange={(e) =>
+                      setMatchers((m) => ({ ...m, variants: e.target.checked }))
+                    }
+                    disabled={saving}
+                  />
+                  <span>
+                    Variants <span className="text-slate-500">(stems + plurals)</span>
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={matchers.phonetic}
+                    onChange={(e) =>
+                      setMatchers((m) => ({ ...m, phonetic: e.target.checked }))
+                    }
+                    disabled={saving}
+                  />
+                  <span>
+                    Phonetic{" "}
+                    <span className="text-slate-500">(your custom words only)</span>
+                  </span>
+                </label>
+              </div>
             </section>
 
             {error && (
