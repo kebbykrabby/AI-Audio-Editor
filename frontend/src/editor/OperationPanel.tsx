@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { detectFillers } from "../api/ai";
+import { detectFillers, detectProfanity } from "../api/ai";
+import CensorshipSettingsModal from "./CensorshipSettingsModal";
 import { ApiRequestError } from "../api/client";
 import { enqueueOperation, pollOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
@@ -35,7 +36,10 @@ export default function OperationPanel() {
   const updateChannelAsset = useEditorStore((s) => s.updateChannelAsset);
   const enterChannelEdit = useEditorStore((s) => s.enterChannelEdit);
   const enterFillerReview = useEditorStore((s) => s.enterFillerReview);
+  const enterProfanityReview = useEditorStore((s) => s.enterProfanityReview);
   const [detecting, setDetecting] = useState(false);
+  const [detectingProfanity, setDetectingProfanity] = useState(false);
+  const [censorshipSettingsOpen, setCensorshipSettingsOpen] = useState(false);
 
   const [fadeDuration, setFadeDuration] = useState(1.0);
   const [fadeCurve, setFadeCurve] = useState<"linear" | "exponential">("linear");
@@ -201,6 +205,41 @@ export default function OperationPanel() {
       setError(friendlyMessage(e));
     } finally {
       setDetecting(false);
+    }
+  };
+
+  const handleCensorProfanity = async () => {
+    if (!asset || detectingProfanity || isProcessing) return;
+
+    const durationSec = asset.durationSec ?? 0;
+    const confirmMsg =
+      `Find profanity in this audio?\n\n` +
+      `Duration: ${durationSec.toFixed(1)}s\n` +
+      `The audio will be transcribed by the configured AI provider; detected ` +
+      `words will be replaced with a beep when you apply.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setError(null);
+    setDetectingProfanity(true);
+    try {
+      const { operationId, result } = await detectProfanity(asset.assetId);
+      enterProfanityReview({
+        operationId,
+        inputAssetId: asset.assetId,
+        result,
+        rejectedWordIndices: new Set(),
+        // Per D4: slider hidden in Phase 1; threshold 0 keeps all matches visible.
+        confidenceThreshold: 0,
+        mode: "beep",
+        beepHz: 1000,
+      });
+      if (result.regions.length === 0) {
+        setWarning("No profanity detected in this audio.");
+      }
+    } catch (e) {
+      setError(friendlyMessage(e));
+    } finally {
+      setDetectingProfanity(false);
     }
   };
 
@@ -422,7 +461,27 @@ export default function OperationPanel() {
         >
           {detecting ? "Transcribing…" : "Find filler words"}
         </button>
+        <button
+          disabled={isProcessing || detectingProfanity}
+          onClick={handleCensorProfanity}
+          className="op-btn"
+          title="Detect profanity — review before censoring with a beep"
+        >
+          {detectingProfanity ? "Transcribing…" : "Censor profanity"}
+        </button>
+        <button
+          onClick={() => setCensorshipSettingsOpen(true)}
+          className="op-btn px-2"
+          title="Edit censorship word list"
+          aria-label="Edit censorship word list"
+        >
+          ⚙
+        </button>
       </div>
+      <CensorshipSettingsModal
+        open={censorshipSettingsOpen}
+        onClose={() => setCensorshipSettingsOpen(false)}
+      />
 
       {!selection && (
         <p className="text-xs text-slate-500 mt-2">Select a region on the waveform to use Trim and Delete</p>

@@ -221,7 +221,10 @@ async def _drain_jobs_async(broker, *, max_loops: int = 10) -> int:
     """
     from dramatiq import Message
 
-    from app.services.ai_service import _run_ai_detect_fillers_job_async
+    from app.services.ai_service import (
+        _run_ai_detect_fillers_job_async,
+        _run_ai_detect_profanity_job_async,
+    )
     from app.services.asset_service import _run_upload_job_async
     from app.services.export_service import _run_export_job_async
     from app.services.operation_service import _run_operation_job_async
@@ -232,6 +235,7 @@ async def _drain_jobs_async(broker, *, max_loops: int = 10) -> int:
         "run_operation_actor": _run_operation_job_async,
         "run_export_actor": _run_export_job_async,
         "run_ai_detect_fillers_actor": _run_ai_detect_fillers_job_async,
+        "run_ai_detect_profanity_actor": _run_ai_detect_profanity_job_async,
     }
 
     processed = 0

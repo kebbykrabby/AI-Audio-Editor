@@ -19,6 +19,7 @@ dependencies = [
     "aioboto3>=13.0",
     "dramatiq[redis]>=1.17",
     "faster-whisper>=1.0",
+    "metaphone>=0.6",
 ]
 
 [tool.setuptools.packages.find]

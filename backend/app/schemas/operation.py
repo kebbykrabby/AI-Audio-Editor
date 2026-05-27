@@ -79,6 +79,26 @@ class RemoveSegmentsParams(BaseModel):
     crossfade_ms: float = Field(ge=5, le=100, default=20.0)
 
 
+class CensorSegmentsInterval(BaseModel):
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+
+
+class CensorSegmentsParams(BaseModel):
+    intervals: list[CensorSegmentsInterval] = Field(min_length=1, max_length=500)
+    # beep: 1 kHz sine over each region (duration-preserving).
+    # mute: silence each region (duration-preserving).
+    # cut: delete each region with crossfade (duration-SHORTENING; delegates
+    #      internally to the same DSP as remove_segments).
+    # reverse_pitch: reverse + pitch-shift each region (duration-preserving).
+    mode: Literal["beep", "mute", "cut", "reverse_pitch"] = "beep"
+    # Beep tone frequency in Hz. Default 1 kHz mirrors broadcast convention.
+    # Ignored when mode != "beep".
+    beep_hz: int = Field(ge=200, le=8000, default=1000)
+    # Crossfade width for mode="cut". Ignored otherwise. Matches remove_segments default.
+    crossfade_ms: float = Field(ge=5, le=100, default=20.0)
+
+
 # --- Operation request models (discriminated union) ---
 
 class TrimOperation(BaseModel):
@@ -156,6 +176,11 @@ class RemoveSegmentsOperation(BaseModel):
     parameters: RemoveSegmentsParams
 
 
+class CensorSegmentsOperation(BaseModel):
+    type: Literal["censor_segments"]
+    parameters: CensorSegmentsParams
+
+
 OperationRequest = Annotated[
     TrimOperation
     | DeleteOperation
@@ -171,7 +196,8 @@ OperationRequest = Annotated[
     | SpeedOperation
     | SplitChannelsOperation
     | MergeChannelsOperation
-    | RemoveSegmentsOperation,
+    | RemoveSegmentsOperation
+    | CensorSegmentsOperation,
     Field(discriminator="type"),
 ]
 

@@ -52,6 +52,29 @@ export interface FillerDetectionResult {
   modelVersion: string;
 }
 
+export interface ProfanityRegion {
+  start: number;
+  end: number;
+  text: string;
+  wordIndex: number;
+  confidence: number;
+  category: string;
+  matchedBy: string; // "exact" | "variants" | "phonetic"
+}
+
+export interface ProfanityDetectionResult {
+  transcriptId: string;
+  durationSec: number;
+  language: string;
+  regions: ProfanityRegion[];
+  costUsd?: number | null;
+  modelVersion: string;
+}
+
+// All four modes ship in Phase 2. Only "cut" changes the audio duration —
+// the other three preserve it (the censored region is replaced in place).
+export type CensorMode = "beep" | "mute" | "cut" | "reverse_pitch";
+
 export interface OperationResponse {
   operationId: string;
   status: OperationStatus;
@@ -59,8 +82,10 @@ export interface OperationResponse {
   asset?: Asset | null;
   secondaryAsset?: Asset | null;
   error?: ApiError["error"];
-  // AI ops (ai_detect_fillers) populate this; deterministic ops leave it absent.
-  result?: FillerDetectionResult | null;
+  // AI ops populate this; deterministic ops leave it absent. Shape varies by
+  // op type — callers use the request's `type` (or the response context) to
+  // know which interface to interpret it as.
+  result?: FillerDetectionResult | ProfanityDetectionResult | null;
 }
 
 export type ExportStatus = "queued" | "running" | "completed" | "failed";

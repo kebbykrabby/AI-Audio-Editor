@@ -470,6 +470,43 @@ async def _dispatch_async(
             input_path, output_path,
             intervals=merged, duration_sec=duration, crossfade_ms=crossfade_ms,
         )
+    if op_type == "censor_segments":
+        intervals_raw = params["intervals"]
+        intervals = [(float(iv["start"]), float(iv["end"])) for iv in intervals_raw]
+        mode = params.get("mode", "beep")
+        if mode == "beep":
+            beep_hz = int(params.get("beep_hz", 1000))
+            return await ffmpeg_proc.censor_segments_with_beep(
+                input_path, output_path,
+                intervals=intervals, duration_sec=duration, beep_hz=beep_hz,
+            )
+        if mode == "mute":
+            return await ffmpeg_proc.censor_segments_with_mute(
+                input_path, output_path,
+                intervals=intervals, duration_sec=duration,
+            )
+        if mode == "cut":
+            # Delegates to the same DSP as the remove_segments op. The merge step
+            # collapses adjacent intervals so their crossfades don't overlap.
+            crossfade_ms = float(params.get("crossfade_ms", 20.0))
+            merged = _merge_adjacent(intervals, gap_threshold_sec=2 * crossfade_ms / 1000.0)
+            return await ffmpeg_proc.remove_segments_with_crossfade(
+                input_path, output_path,
+                intervals=merged, duration_sec=duration, crossfade_ms=crossfade_ms,
+            )
+        if mode == "reverse_pitch":
+            return await ffmpeg_proc.censor_segments_with_reverse_pitch(
+                input_path, output_path,
+                intervals=intervals, duration_sec=duration,
+            )
+        # Defense-in-depth: schema-level Literal should have rejected this at
+        # request parse time. Reaching here means schema-vs-dispatch drift.
+        raise OperationError(
+            "INVALID_PARAMETERS",
+            f"Unknown censor mode {mode!r}",
+            field="mode", constraint="must be one of beep/mute/cut/reverse_pitch",
+            received=mode,
+        )
     raise OperationError("INVALID_OPERATION", f"Unknown operation: {op_type}")
 
 
@@ -523,7 +560,7 @@ def _validate_params(op_type: str, params: dict, duration: float) -> None:
                 field="duration_sec", constraint=f"must be <= {duration}",
                 received=params["duration_sec"],
             )
-    elif op_type == "remove_segments":
+    elif op_type in ("remove_segments", "censor_segments"):
         intervals = params.get("intervals") or []
         if not intervals:
             raise OperationError(
