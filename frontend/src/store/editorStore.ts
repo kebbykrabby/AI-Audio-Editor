@@ -3,6 +3,7 @@ import type {
   Asset,
   CensorMode,
   FillerDetectionResult,
+  NlePlanResult,
   ProfanityDetectionResult,
   Selection,
 } from "./types";
@@ -11,6 +12,7 @@ const STORAGE_KEY = "audioEditor.currentAssetId";
 const PENDING_OP_KEY = "audioEditor.pendingOperation";
 const LAST_DETECT_OP_KEY = "audioEditor.lastDetectOperationId";
 const LAST_PROFANITY_OP_KEY = "audioEditor.lastProfanityOperationId";
+const LAST_NLE_PLAN_OP_KEY = "audioEditor.lastNlePlanOperationId";
 
 function persistCurrentAssetId(id: string | null): void {
   try {
@@ -99,6 +101,23 @@ export function readPersistedLastProfanityOperationId(): string | null {
   }
 }
 
+function persistLastNlePlanOperationId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(LAST_NLE_PLAN_OP_KEY, id);
+    else localStorage.removeItem(LAST_NLE_PLAN_OP_KEY);
+  } catch {
+    // fail silently
+  }
+}
+
+export function readPersistedLastNlePlanOperationId(): string | null {
+  try {
+    return localStorage.getItem(LAST_NLE_PLAN_OP_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export interface ActiveFillerReview {
   operationId: string;
   inputAssetId: string;
@@ -119,6 +138,17 @@ export interface ActiveProfanityReview {
   mode: CensorMode;
   // Beep tone frequency. UI exposes a selector; default 1 kHz mirrors broadcast.
   beepHz: number;
+}
+
+export interface ActiveNlePlanReview {
+  operationId: string;
+  inputAssetId: string;
+  result: NlePlanResult;
+  // Step indices the user has toggled OFF. Initial state = empty = all
+  // valid steps included. Invalid steps are always excluded regardless.
+  excludedStepIndices: Set<number>;
+  // Sequential apply progress (null when not applying).
+  applyProgress: { currentIndex: number; totalEnabled: number } | null;
 }
 
 interface ChannelEditState {
@@ -142,6 +172,7 @@ interface EditorState {
   channelEdit: ChannelEditState | null;
   activeFillerReview: ActiveFillerReview | null;
   activeProfanityReview: ActiveProfanityReview | null;
+  activeNlePlanReview: ActiveNlePlanReview | null;
   playbackRequest: { startSec: number; endSec: number; id: number } | null;
 
   currentAsset: () => Asset | null;
@@ -179,6 +210,10 @@ interface EditorState {
   setProfanityMode: (mode: CensorMode) => void;
   setProfanityBeepHz: (hz: number) => void;
   exitProfanityReview: () => void;
+  enterNlePlanReview: (review: ActiveNlePlanReview) => void;
+  toggleNlePlanStep: (stepIndex: number) => void;
+  setNlePlanApplyProgress: (progress: { currentIndex: number; totalEnabled: number } | null) => void;
+  exitNlePlanReview: () => void;
   playRange: (startSec: number, endSec: number) => void;
   reset: () => void;
 }
@@ -199,6 +234,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   channelEdit: null,
   activeFillerReview: null,
   activeProfanityReview: null,
+  activeNlePlanReview: null,
   playbackRequest: null,
 
   currentAsset: () => {
@@ -391,6 +427,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set({ activeProfanityReview: null });
   },
 
+  enterNlePlanReview: (review) => {
+    persistLastNlePlanOperationId(review.operationId);
+    set({ activeNlePlanReview: review });
+  },
+
+  toggleNlePlanStep: (stepIndex) => {
+    const review = get().activeNlePlanReview;
+    if (!review) return;
+    const next = new Set(review.excludedStepIndices);
+    if (next.has(stepIndex)) next.delete(stepIndex);
+    else next.add(stepIndex);
+    set({ activeNlePlanReview: { ...review, excludedStepIndices: next } });
+  },
+
+  setNlePlanApplyProgress: (progress) => {
+    const review = get().activeNlePlanReview;
+    if (!review) return;
+    set({ activeNlePlanReview: { ...review, applyProgress: progress } });
+  },
+
+  exitNlePlanReview: () => {
+    persistLastNlePlanOperationId(null);
+    set({ activeNlePlanReview: null });
+  },
+
   playRange: (startSec, endSec) =>
     set({ playbackRequest: { startSec, endSec, id: Date.now() } }),
 
@@ -409,11 +470,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       channelEdit: null,
       activeFillerReview: null,
       activeProfanityReview: null,
+      activeNlePlanReview: null,
       playbackRequest: null,
     });
     clearPersistedAssetId();
     clearPersistedPendingOp();
     persistLastDetectOperationId(null);
     persistLastProfanityOperationId(null);
+    persistLastNlePlanOperationId(null);
   },
 }));

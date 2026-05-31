@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { getAsset } from "../api/assets";
 import { getOperation } from "../api/operations";
-import type { Asset, FillerDetectionResult, ProfanityDetectionResult } from "./types";
+import type {
+  Asset,
+  FillerDetectionResult,
+  NlePlanResult,
+  ProfanityDetectionResult,
+} from "./types";
 import {
   clearPersistedAssetId,
   clearPersistedPendingOp,
   readPersistedAssetId,
   readPersistedLastDetectOperationId,
+  readPersistedLastNlePlanOperationId,
   readPersistedLastProfanityOperationId,
   readPersistedPendingOp,
   useEditorStore,
@@ -77,6 +83,7 @@ export function useRestoreSession(): { isRestoring: boolean } {
         // without a second transcription.
         await restoreFillerReview(tip);
         await restoreProfanityReview(tip);
+        await restoreNlePlanReview(tip);
       } catch {
         clearPersistedAssetId();
         clearPersistedPendingOp();
@@ -131,6 +138,30 @@ async function restoreProfanityReview(tip: Asset | null): Promise<void> {
       confidenceThreshold: 0.0,
       mode: "beep",
       beepHz: 1000,
+    });
+  } catch {
+    // Stale / deleted / cross-user → silently ignore.
+  }
+}
+
+async function restoreNlePlanReview(tip: Asset | null): Promise<void> {
+  const lastId = readPersistedLastNlePlanOperationId();
+  if (!lastId || !tip) return;
+  try {
+    const op = await getOperation(lastId);
+    if (op.status !== "completed" || !op.result) return;
+    const result = op.result as NlePlanResult;
+    // We don't have a duration on the plan result to gate against (NLE doesn't
+    // produce a derived asset), so we trust that the persisted lastId belongs
+    // to whatever asset was the tip when it was last persisted. If the user
+    // navigated to a different asset since, the plan may not reference it
+    // sensibly — that's OK, they can Cancel out.
+    useEditorStore.getState().enterNlePlanReview({
+      operationId: lastId,
+      inputAssetId: tip.assetId,
+      result,
+      excludedStepIndices: new Set(),
+      applyProgress: null,
     });
   } catch {
     // Stale / deleted / cross-user → silently ignore.

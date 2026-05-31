@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { detectFillers, detectProfanity } from "../api/ai";
+import { generateNlePlan } from "../api/nle";
 import CensorshipSettingsModal from "./CensorshipSettingsModal";
 import { ApiRequestError } from "../api/client";
 import { enqueueOperation, pollOperation } from "../api/operations";
@@ -37,9 +38,12 @@ export default function OperationPanel() {
   const enterChannelEdit = useEditorStore((s) => s.enterChannelEdit);
   const enterFillerReview = useEditorStore((s) => s.enterFillerReview);
   const enterProfanityReview = useEditorStore((s) => s.enterProfanityReview);
+  const enterNlePlanReview = useEditorStore((s) => s.enterNlePlanReview);
   const [detecting, setDetecting] = useState(false);
   const [detectingProfanity, setDetectingProfanity] = useState(false);
   const [censorshipSettingsOpen, setCensorshipSettingsOpen] = useState(false);
+  const [nlePrompt, setNlePrompt] = useState("");
+  const [planning, setPlanning] = useState(false);
 
   const [fadeDuration, setFadeDuration] = useState(1.0);
   const [fadeCurve, setFadeCurve] = useState<"linear" | "exponential">("linear");
@@ -205,6 +209,41 @@ export default function OperationPanel() {
       setError(friendlyMessage(e));
     } finally {
       setDetecting(false);
+    }
+  };
+
+  const handleAskAi = async () => {
+    if (!asset || planning || isProcessing) return;
+    const trimmed = nlePrompt.trim();
+    if (!trimmed) {
+      setError("Type a description of what you want the AI to do.");
+      return;
+    }
+    setError(null);
+    setPlanning(true);
+    try {
+      const { operationId, result } = await generateNlePlan(asset.assetId, {
+        prompt: trimmed,
+        // Pass the user's drag-selection as anchoring context. Backend stays
+        // selection-aware via D5; if the user typed without selecting, no
+        // selection block is sent.
+        selection: selection
+          ? { startSec: selection.startSec, endSec: selection.endSec }
+          : null,
+      });
+      enterNlePlanReview({
+        operationId,
+        inputAssetId: asset.assetId,
+        result,
+        excludedStepIndices: new Set(),
+        applyProgress: null,
+      });
+      // Don't auto-clear the prompt — the user may want to tweak + re-plan if
+      // the LLM asked for clarification.
+    } catch (e) {
+      setError(friendlyMessage(e));
+    } finally {
+      setPlanning(false);
     }
   };
 
@@ -482,6 +521,51 @@ export default function OperationPanel() {
         open={censorshipSettingsOpen}
         onClose={() => setCensorshipSettingsOpen(false)}
       />
+
+      <div className="mt-4 space-y-2">
+        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          Ask AI
+        </h4>
+        <p className="text-xs text-slate-500">
+          Describe what you want in plain English. The AI proposes a plan you
+          review before any audio changes.
+          {selection && (
+            <span className="block mt-1 text-blue-400">
+              Your selection ({selection.startSec.toFixed(2)}s–
+              {selection.endSec.toFixed(2)}s) will be passed along as context.
+            </span>
+          )}
+        </p>
+        <textarea
+          value={nlePrompt}
+          onChange={(e) => setNlePrompt(e.target.value)}
+          disabled={planning || isProcessing}
+          rows={2}
+          placeholder='e.g. "Trim the first 30 seconds and fade out over 2 seconds"'
+          className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm text-slate-200 disabled:opacity-50 resize-y"
+          onKeyDown={(e) => {
+            // Cmd/Ctrl+Enter submits — common LLM-input convention.
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              void handleAskAi();
+            }
+          }}
+        />
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-slate-600 italic">
+            Your audio's spoken content is transcribed and sent to the configured
+            LLM provider. Free-tier providers may use submitted data for training.
+          </p>
+          <button
+            onClick={handleAskAi}
+            disabled={planning || isProcessing || !nlePrompt.trim()}
+            className="op-btn shrink-0"
+            title="Generate a plan (Ctrl/Cmd+Enter)"
+          >
+            {planning ? "Planning…" : "Plan"}
+          </button>
+        </div>
+      </div>
 
       {!selection && (
         <p className="text-xs text-slate-500 mt-2">Select a region on the waveform to use Trim and Delete</p>

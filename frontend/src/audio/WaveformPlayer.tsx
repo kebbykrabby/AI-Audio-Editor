@@ -6,6 +6,44 @@ import { useAssetUrlRefresh } from "./useAssetUrlRefresh";
 
 const FILLER_REGION_ID_PREFIX = "filler-";
 const PROFANITY_REGION_ID_PREFIX = "profanity-";
+const NLE_REGION_ID_PREFIX = "nle-";
+
+interface NleStepLike {
+  stepIndex: number;
+  operation: { type: string; parameters: Record<string, unknown> };
+  validationStatus: "valid" | "invalid";
+}
+
+/**
+ * Time range an NLE step affects, or null if the step touches the whole asset.
+ * Anchors fade_out against the asset duration so the overlay paints the tail
+ * end, not the start.
+ */
+function nleStepRange(step: NleStepLike, assetDuration: number): [number, number] | null {
+  const p = step.operation.parameters || {};
+  const num = (k: string) => (typeof p[k] === "number" ? (p[k] as number) : null);
+  switch (step.operation.type) {
+    case "trim":
+    case "delete": {
+      const s = num("start_sec");
+      const e = num("end_sec");
+      return s !== null && e !== null && e > s ? [s, e] : null;
+    }
+    case "fade_in": {
+      const d = num("duration_sec");
+      return d !== null && d > 0 ? [0, d] : null;
+    }
+    case "fade_out": {
+      const d = num("duration_sec");
+      if (d === null || d <= 0 || assetDuration <= 0) return null;
+      return [Math.max(0, assetDuration - d), assetDuration];
+    }
+    // remove_silence / reverse / gain / normalize / speed / channel ops
+    // affect the whole asset → no localized overlay.
+    default:
+      return null;
+  }
+}
 
 export default function WaveformPlayer() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -14,6 +52,7 @@ export default function WaveformPlayer() {
   const regionRef = useRef<Region | null>(null);
   const fillerRegionsRef = useRef<Region[]>([]);
   const profanityRegionsRef = useRef<Region[]>([]);
+  const nleRegionsRef = useRef<Region[]>([]);
   const skipSyncRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -27,6 +66,7 @@ export default function WaveformPlayer() {
   const playbackRequest = useEditorStore((s) => s.playbackRequest);
   const activeFillerReview = useEditorStore((s) => s.activeFillerReview);
   const activeProfanityReview = useEditorStore((s) => s.activeProfanityReview);
+  const activeNlePlanReview = useEditorStore((s) => s.activeNlePlanReview);
 
   // Pre-emptive URL refresh so signed URLs don't expire mid-session.
   // Also exposes refreshNow() for media-error recovery.
@@ -87,7 +127,8 @@ export default function WaveformPlayer() {
     regions.enableDragSelection({ color: "rgba(59, 130, 246, 0.3)" });
     const isAiOverlay = (id: string) =>
       id.startsWith(FILLER_REGION_ID_PREFIX) ||
-      id.startsWith(PROFANITY_REGION_ID_PREFIX);
+      id.startsWith(PROFANITY_REGION_ID_PREFIX) ||
+      id.startsWith(NLE_REGION_ID_PREFIX);
 
     regions.on("region-created", (region) => {
       // AI-detected overlays are owned by their effects (below); they must not
@@ -212,6 +253,44 @@ export default function WaveformPlayer() {
       profanityRegionsRef.current.push(region);
     }
   }, [activeProfanityReview]);
+
+  // NLE plan overlays — blue, distinct from red (fillers) and orange
+  // (profanity). One overlay per step whose params encode a time range
+  // (trim, delete, fade_in, fade_out, remove_silence). Other ops (reverse,
+  // gain, normalize, speed, channel ops) touch the whole asset and don't
+  // get a localized overlay; they live in the side-panel list only.
+  useEffect(() => {
+    const regions = regionsRef.current;
+    if (!regions) return;
+    for (const r of nleRegionsRef.current) {
+      try { r.remove(); } catch { /* already removed */ }
+    }
+    nleRegionsRef.current = [];
+    if (!activeNlePlanReview) return;
+
+    const assetDuration = asset?.durationSec ?? 0;
+    const { result, excludedStepIndices } = activeNlePlanReview;
+
+    for (const step of result.steps) {
+      const range = nleStepRange(step, assetDuration);
+      if (!range) continue;
+      const isEnabled =
+        step.validationStatus === "valid" &&
+        !excludedStepIndices.has(step.stepIndex);
+      const color = isEnabled
+        ? "rgba(59, 130, 246, 0.30)"   // blue-500/30 — about-to-be-applied
+        : "rgba(100, 116, 139, 0.15)"; // slate-500/15 — inactive
+      const region = regions.addRegion({
+        id: `${NLE_REGION_ID_PREFIX}${step.stepIndex}`,
+        start: range[0],
+        end: range[1],
+        color,
+        drag: false,
+        resize: false,
+      });
+      nleRegionsRef.current.push(region);
+    }
+  }, [activeNlePlanReview, asset?.durationSec]);
 
   // Sync selection from store (e.g. numeric input changes)
   useEffect(() => {

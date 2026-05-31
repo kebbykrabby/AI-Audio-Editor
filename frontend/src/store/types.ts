@@ -75,6 +75,34 @@ export interface ProfanityDetectionResult {
 // the other three preserve it (the censored region is replaced in place).
 export type CensorMode = "beep" | "mute" | "cut" | "reverse_pitch";
 
+// --- Natural-language editing ---------------------------------------------
+
+export interface NleSelection {
+  startSec: number;
+  endSec: number;
+}
+
+export interface NlePlanStep {
+  stepIndex: number;
+  description: string;
+  operation: {
+    type: string;
+    parameters: Record<string, unknown>;
+  };
+  validationStatus: "valid" | "invalid";
+  validationError?: string | null;
+}
+
+export interface NlePlanResult {
+  prompt: string;
+  modelVersion: string;
+  costUsd?: number | null;
+  finalResponse: string;
+  steps: NlePlanStep[];
+  transcriptUsed: boolean;
+  selectionUsed: boolean;
+}
+
 export interface OperationResponse {
   operationId: string;
   status: OperationStatus;
@@ -85,7 +113,11 @@ export interface OperationResponse {
   // AI ops populate this; deterministic ops leave it absent. Shape varies by
   // op type — callers use the request's `type` (or the response context) to
   // know which interface to interpret it as.
-  result?: FillerDetectionResult | ProfanityDetectionResult | null;
+  result?:
+    | FillerDetectionResult
+    | ProfanityDetectionResult
+    | NlePlanResult
+    | null;
 }
 
 export type ExportStatus = "queued" | "running" | "completed" | "failed";

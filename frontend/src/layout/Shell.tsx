@@ -10,6 +10,7 @@ import SelectionInfo from "../editor/SelectionInfo";
 import OperationPanel from "../editor/OperationPanel";
 import ChannelEditor from "../editor/ChannelEditor";
 import FillerReviewPanel from "../editor/FillerReviewPanel";
+import NlePlanReviewPanel from "../editor/NlePlanReviewPanel";
 import ProfanityReviewPanel from "../editor/ProfanityReviewPanel";
 
 function Workspace() {
@@ -23,6 +24,7 @@ function Workspace() {
   const channelEdit = useEditorStore((s) => s.channelEdit);
   const activeFillerReview = useEditorStore((s) => s.activeFillerReview);
   const activeProfanityReview = useEditorStore((s) => s.activeProfanityReview);
+  const activeNlePlanReview = useEditorStore((s) => s.activeNlePlanReview);
 
   if (isRestoring) {
     return (
@@ -86,6 +88,8 @@ function Workspace() {
               <FillerReviewPanel />
             ) : activeProfanityReview ? (
               <ProfanityReviewPanel />
+            ) : activeNlePlanReview ? (
+              <NlePlanReviewPanel />
             ) : (
               <OperationPanel />
             )}
