@@ -12,6 +12,7 @@ For development, a single process + single thread is fine:
 from app.workers.ai_worker import (  # noqa: F401
     run_ai_detect_fillers_actor,
     run_ai_detect_profanity_actor,
+    run_ai_nle_plan_actor,
 )
 from app.workers.broker import broker  # noqa: F401
 from app.workers.export_worker import run_export_actor  # noqa: F401

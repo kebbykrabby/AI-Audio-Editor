@@ -19,8 +19,9 @@ from app.schemas.ai import (
     DetectFillersRequest,
     DetectProfanityRequest,
 )
+from app.schemas.nle import NlePlanRequest
 from app.schemas.operation import OperationResponse
-from app.services import ai_service, censorship_service
+from app.services import ai_service, censorship_service, nle_service
 from app.services.ai_quota import AIQuotaError
 from app.services.operation_service import OperationError
 
@@ -143,6 +144,62 @@ async def detect_profanity(
     try:
         operation = await ai_service.enqueue_detect_profanity(
             db, user=user, asset_id=asset_id,
+        )
+    except OperationError as e:
+        content: dict = {"error": {"code": e.code, "message": e.message}}
+        if e.field:
+            details: dict = {"field": e.field}
+            if e.constraint:
+                details["constraint"] = e.constraint
+            if e.received is not None:
+                details["received"] = e.received
+            content["error"]["details"] = details
+        return JSONResponse(status_code=_STATUS_MAP.get(e.code, 500), content=content)
+    except AIQuotaError as e:
+        return JSONResponse(
+            status_code=_STATUS_MAP.get(e.code, 429),
+            content={"error": {"code": e.code, "message": e.message}},
+        )
+
+    return OperationResponse(
+        operationId=operation.id,
+        status=operation.status,
+        warning=None,
+        asset=None,
+        secondaryAsset=None,
+        error=None,
+        result=None,
+    )
+
+
+# --- Natural-language editing (Phase 2) -------------------------------------
+
+
+@router.post(
+    "/assets/{asset_id}/ai/plan",
+    response_model=OperationResponse,
+    status_code=202,
+)
+async def generate_nle_plan(
+    asset_id: str,
+    body: NlePlanRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a natural-language editing plan.
+
+    Returns immediately with an operation id; the worker calls the LLM and
+    writes the resulting plan to `operations.result`. Frontend polls
+    `GET /api/operations/{id}` for the completed plan.
+    """
+    selection_tuple = (
+        (body.selection.startSec, body.selection.endSec)
+        if body.selection else None
+    )
+    try:
+        operation = await nle_service.enqueue_generate_plan(
+            db, user=user, asset_id=asset_id,
+            prompt=body.prompt, selection=selection_tuple,
         )
     except OperationError as e:
         content: dict = {"error": {"code": e.code, "message": e.message}}

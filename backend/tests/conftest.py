@@ -227,6 +227,7 @@ async def _drain_jobs_async(broker, *, max_loops: int = 10) -> int:
     )
     from app.services.asset_service import _run_upload_job_async
     from app.services.export_service import _run_export_job_async
+    from app.services.nle_service import _run_ai_nle_plan_job_async
     from app.services.operation_service import _run_operation_job_async
     from app.workers.db import SyncSession
 
@@ -236,6 +237,7 @@ async def _drain_jobs_async(broker, *, max_loops: int = 10) -> int:
         "run_export_actor": _run_export_job_async,
         "run_ai_detect_fillers_actor": _run_ai_detect_fillers_job_async,
         "run_ai_detect_profanity_actor": _run_ai_detect_profanity_job_async,
+        "run_ai_nle_plan_actor": _run_ai_nle_plan_job_async,
     }
 
     processed = 0
