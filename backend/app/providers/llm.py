@@ -107,6 +107,51 @@ def _scalar(value: Any) -> Any:
     return value
 
 
+# Fields most tool-calling APIs (Google FunctionDeclaration in particular)
+# accept on a parameter property schema. Everything else is stripped before
+# the schema reaches the API. Whitelist > blacklist because the surface keeps
+# evolving as JSON Schema drafts and provider implementations diverge.
+_ALLOWED_PARAM_FIELDS: frozenset[str] = frozenset({
+    "type", "description", "enum", "format", "nullable",
+    "minimum", "maximum",
+    "minLength", "maxLength",
+    "items", "properties", "required",
+    "anyOf",
+})
+
+
+def _sanitize_property(schema: dict) -> dict:
+    """Map a Pydantic-emitted property schema to the subset Google + co. accept.
+
+    Concretely:
+    - `exclusiveMinimum: N` (Pydantic 2 style for `gt=N`) → `minimum: N`
+    - `exclusiveMaximum: N` (Pydantic 2 style for `lt=N`) → `maximum: N`
+      (The strictness loss is paid back by server-side Pydantic re-validation
+      in `nle_service._validate_tool_call`, which uses the original schema.)
+    - Drop anything outside `_ALLOWED_PARAM_FIELDS` — title, default, examples,
+      additionalProperties, etc. don't help the LLM and may be rejected.
+    - Recurse into nested `items` / `properties` because list element schemas
+      and nested object props can carry the same gotchas.
+    """
+    out: dict[str, Any] = {}
+    for k, v in schema.items():
+        if k == "exclusiveMinimum":
+            out["minimum"] = v
+        elif k == "exclusiveMaximum":
+            out["maximum"] = v
+        elif k in _ALLOWED_PARAM_FIELDS:
+            if k == "items" and isinstance(v, dict):
+                out[k] = _sanitize_property(v)
+            elif k == "properties" and isinstance(v, dict):
+                out[k] = {pk: _sanitize_property(pv) for pk, pv in v.items()}
+            elif k == "anyOf" and isinstance(v, list):
+                out[k] = [_sanitize_property(s) if isinstance(s, dict) else s for s in v]
+            else:
+                out[k] = v
+        # Silently drop anything else.
+    return out
+
+
 def operation_schema_to_tool(
     *,
     name: str,
@@ -115,12 +160,19 @@ def operation_schema_to_tool(
 ) -> ToolDefinition:
     """Translate a Pydantic `.model_json_schema()` output to a ToolDefinition.
 
-    The Pydantic schema lives at `schemas/operation.py`; this helper just
-    massages the result into the shape LLM tool-calling APIs expect:
+    The Pydantic schema lives at `schemas/operation.py`; this helper massages
+    the result into the shape every LLM tool-calling API accepts:
     - Top-level object schema with `properties` + `required`
-    - Strip `$defs` and `title` cruft
     - Inline `anyOf` for nullable scalar types
-    - Pass through `enum`, `Literal`, range constraints (gt/ge/lt/le)
+    - Field whitelist via `_sanitize_property` — drops Pydantic-emitted
+      fields the FunctionDeclaration validator rejects (title, exclusive*,
+      default, examples, etc.) and converts exclusiveMinimum/Maximum to
+      minimum/maximum
+
+    Note: the per-field range constraints communicated to the LLM are
+    slightly looser than the server's Pydantic validation (gt → ge). The
+    server is still the source of truth — `_validate_tool_call` re-runs the
+    original schema and catches any tool calls with strictly-zero values.
     """
     cleaned: dict[str, Any] = {
         "type": "object",
@@ -129,10 +181,11 @@ def operation_schema_to_tool(
     props = pydantic_schema.get("properties", {})
     required = list(pydantic_schema.get("required", []))
     for key, schema in props.items():
-        s = dict(_scalar(schema))
-        # Drop noisy metadata that doesn't help the LLM.
-        s.pop("title", None)
-        cleaned["properties"][key] = s
+        flat = _scalar(schema) if isinstance(schema, dict) else schema
+        if isinstance(flat, dict):
+            cleaned["properties"][key] = _sanitize_property(flat)
+        else:
+            cleaned["properties"][key] = flat
     if required:
         cleaned["required"] = required
     return ToolDefinition(

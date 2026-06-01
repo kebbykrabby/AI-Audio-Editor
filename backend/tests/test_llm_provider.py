@@ -115,6 +115,69 @@ def test_operation_schema_to_tool_required_list():
     assert "duration_sec" in tool.parameters_schema["required"]
 
 
+def test_operation_schema_to_tool_converts_exclusive_min_to_minimum():
+    """`Field(gt=0)` emits `exclusiveMinimum: 0` in modern Pydantic, which the
+    Gemini FunctionDeclaration validator rejects as an extra field. Sanitizer
+    converts it to `minimum: 0` so the LLM still gets a guard rail and the
+    Google SDK accepts the tool definition.
+
+    Original schema validity is enforced server-side by Pydantic re-running
+    the *original* schema on each tool call (`_validate_tool_call`); the LLM
+    just gets a slightly looser hint.
+    """
+    tool = operation_schema_to_tool(
+        name="fade_in",
+        description="Fade in.",
+        pydantic_schema=FadeInParams.model_json_schema(),
+    )
+    duration = tool.parameters_schema["properties"]["duration_sec"]
+    assert "exclusiveMinimum" not in duration, (
+        "exclusiveMinimum must be stripped — Gemini's FunctionDeclaration "
+        "rejects it as an extra field"
+    )
+    assert duration.get("minimum") == 0
+
+
+def test_operation_schema_to_tool_strips_unknown_fields():
+    """Whitelist enforcement — fields outside _ALLOWED_PARAM_FIELDS are dropped,
+    even if Pydantic added them. Pin one common offender: `default`.
+    """
+    # Build a synthetic schema with an extra field to make sure the whitelist
+    # actually drops things and isn't a coincidental no-op.
+    fake_schema = {
+        "properties": {
+            "thing": {
+                "type": "number",
+                "default": 42,
+                "examples": [1, 2, 3],
+                "title": "Thing",
+            },
+        },
+        "required": ["thing"],
+    }
+    tool = operation_schema_to_tool(
+        name="fake_op",
+        description="A fake op.",
+        pydantic_schema=fake_schema,
+    )
+    thing = tool.parameters_schema["properties"]["thing"]
+    assert thing == {"type": "number"}
+
+
+def test_operation_schema_to_tool_strips_exclusive_min_for_remove_silence():
+    """RemoveSilenceParams.min_silence_sec uses gt=0, le=10 → same trap."""
+    from app.schemas.operation import RemoveSilenceParams
+    tool = operation_schema_to_tool(
+        name="remove_silence",
+        description="Remove silence.",
+        pydantic_schema=RemoveSilenceParams.model_json_schema(),
+    )
+    min_sil = tool.parameters_schema["properties"]["min_silence_sec"]
+    assert "exclusiveMinimum" not in min_sil
+    assert min_sil.get("minimum") == 0
+    assert min_sil.get("maximum") == 10
+
+
 # --- System prompt assembly ------------------------------------------------
 
 
