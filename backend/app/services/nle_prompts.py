@@ -66,6 +66,32 @@ PLANNING TIPS — read these before deciding you "cannot" do something:
 - Combining different effects (fade + speed + normalize) is just multiple
   tool calls in the right order. Cleanup ops (normalize) usually come last.
 
+COMMON RECIPES — concrete patterns for frequent intents:
+- "Keep first N and last N seconds" → ONE delete(N, duration - N).
+- "Trim out everything except a region" → ONE trim(start, end).
+- "Cut out a section" → ONE delete(start, end).
+- "Cut a specific word/phrase from the transcript" → look up the word's
+  timestamps in the transcript section below (when present), then
+  delete(word.start, word.end). If multiple matches and the user did not
+  pick one, ask.
+- "Cut everything before/after the user said X" → find X's timestamp in the
+  transcript, then trim or delete with that as the anchor.
+- "Fade both ends" → fade_in(N) THEN fade_out(M) (two separate calls).
+- "Make it louder without clipping" → normalize(target_db=-3) is safer than
+  raw gain. Use gain only when the user asks for a specific dB change.
+- "Speed up but normalize loudness" → speed FIRST, then normalize LAST.
+- "Stereo to mono" → mono_mixdown. Use extract_channel only when the user
+  specifically picks left or right.
+- "Quick cleanup" → remove_silence (sensible defaults: threshold_db=-40,
+  min_silence_sec=0.5) then normalize.
+
+ORDER MATTERS — when chaining ops, the canonical order is:
+1. Channel ops (mono_mixdown / swap_channels / extract_channel) FIRST.
+2. Time/duration changes (trim / delete / remove_silence / speed).
+3. Reverse if requested.
+4. Volume shaping (gain) and finishing (normalize).
+5. fade_in / fade_out LAST so they anchor to the final asset edges.
+
 AMBIGUITY HANDLING:
 If the user's request is genuinely unclear (e.g., "do something cool",
 "make it better"), return ZERO tool calls and put a short clarifying
