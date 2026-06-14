@@ -33,11 +33,18 @@ logger = logging.getLogger(__name__)
 # this map; falling back to (0, 0) means cost reports as 0 (better than
 # crashing the audit log).
 _PRICE_PER_M_TOKENS: dict[str, tuple[float, float]] = {
-    # (input, output) USD per million tokens
+    # (input, output) USD per million tokens, paid tier.
+    # Free-tier usage reports as zero either way; this is for audit accuracy
+    # once a deployment uses billed access.
     "gemini-2.0-flash": (0.075, 0.30),
-    "gemini-2.0-flash-exp": (0.0, 0.0),  # experimental tier: free
+    "gemini-2.0-flash-001": (0.075, 0.30),
+    "gemini-2.0-flash-exp": (0.0, 0.0),
     "gemini-2.0-flash-lite": (0.0375, 0.15),
+    "gemini-2.0-flash-lite-001": (0.0375, 0.15),
     "gemini-2.5-flash": (0.30, 2.50),
+    "gemini-2.5-flash-lite": (0.10, 0.40),
+    "gemini-flash-latest": (0.30, 2.50),       # alias — usually current standard Flash
+    "gemini-flash-lite-latest": (0.10, 0.40),  # alias — usually current Lite
 }
 
 

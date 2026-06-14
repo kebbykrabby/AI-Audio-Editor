@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { ApiRequestError } from "../api/client";
+import { generateNlePlan } from "../api/nle";
 import { enqueueOperation, pollOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
 import type { NlePlanStep } from "../store/types";
@@ -53,13 +54,17 @@ export default function NlePlanReviewPanel() {
   const toggleStep = useEditorStore((s) => s.toggleNlePlanStep);
   const setProgress = useEditorStore((s) => s.setNlePlanApplyProgress);
   const exitReview = useEditorStore((s) => s.exitNlePlanReview);
+  const enterReview = useEditorStore((s) => s.enterNlePlanReview);
   const pushAsset = useEditorStore((s) => s.pushAsset);
   const setPendingOperation = useEditorStore((s) => s.setPendingOperation);
   const setError = useEditorStore((s) => s.setError);
   const isProcessing = useEditorStore((s) => s.isProcessing);
   const playRange = useEditorStore((s) => s.playRange);
+  const selection = useEditorStore((s) => s.selection);
 
   const [applying, setApplying] = useState(false);
+  const [refinePrompt, setRefinePrompt] = useState("");
+  const [refining, setRefining] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   // Enabled valid steps in transcript order. Invalid steps never apply.
@@ -143,6 +148,42 @@ export default function NlePlanReviewPanel() {
     exitReview();
   };
 
+  // Submits a refined prompt to the LLM and swaps the current ambiguity
+  // panel for whatever it returns. Each call is independent (no chat
+  // history is sent — D4 in the design doc); the user iterates by
+  // re-prompting with more specificity.
+  const handleRefine = async () => {
+    if (!asset || refining) return;
+    const trimmed = refinePrompt.trim();
+    if (!trimmed) return;
+    setRefining(true);
+    setError(null);
+    try {
+      const { operationId, result } = await generateNlePlan(asset.assetId, {
+        prompt: trimmed,
+        selection: selection
+          ? { startSec: selection.startSec, endSec: selection.endSec }
+          : null,
+      });
+      enterReview({
+        operationId,
+        inputAssetId: asset.assetId,
+        result,
+        excludedStepIndices: new Set(),
+        applyProgress: null,
+      });
+      setRefinePrompt("");
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Re-plan failed; try again or cancel.",
+      );
+    } finally {
+      setRefining(false);
+    }
+  };
+
   // --- Ambiguity mode -------------------------------------------------------
   if (isAmbiguity) {
     return (
@@ -156,7 +197,7 @@ export default function NlePlanReviewPanel() {
               You asked: <span className="italic">{result.prompt}</span>
             </p>
           </div>
-          <button onClick={exitReview} className="op-btn">
+          <button onClick={exitReview} disabled={refining} className="op-btn">
             Cancel
           </button>
         </div>
@@ -164,6 +205,42 @@ export default function NlePlanReviewPanel() {
           {result.finalResponse ||
             "The AI didn't propose any operations. Try rephrasing with more specifics."}
         </p>
+
+        <div className="space-y-2">
+          <label className="text-xs text-slate-500" htmlFor="nle-refine">
+            Refine your request
+          </label>
+          <textarea
+            id="nle-refine"
+            value={refinePrompt}
+            onChange={(e) => setRefinePrompt(e.target.value)}
+            disabled={refining}
+            rows={2}
+            placeholder="e.g. add details, pick a tool from the list, or constrain the timestamps"
+            className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm text-slate-200 disabled:opacity-50 resize-y"
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                void handleRefine();
+              }
+            }}
+          />
+          <div className="flex justify-end">
+            <button
+              onClick={handleRefine}
+              disabled={refining || !refinePrompt.trim()}
+              className="op-btn"
+              title="Send a refined prompt (Ctrl/Cmd+Enter)"
+            >
+              {refining ? "Re-planning…" : "Re-plan"}
+            </button>
+          </div>
+          <p className="text-xs text-slate-600 italic">
+            Each Re-plan is an independent request — the AI doesn't see your
+            previous turns. State your full intent in this one prompt.
+          </p>
+        </div>
+
         <p className="text-xs text-slate-500">
           Model: <span className="font-mono">{result.modelVersion}</span>
           {result.costUsd != null && result.costUsd > 0 && (
