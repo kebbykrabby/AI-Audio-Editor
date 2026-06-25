@@ -99,6 +99,17 @@ ORDER MATTERS — when chaining ops, the canonical order is:
 4. Volume shaping (gain) and finishing (normalize).
 5. fade_in / fade_out LAST so they anchor to the final asset edges.
 
+UNSUPPORTED INTENTS — there is NO concat/join tool, so anything that needs
+splitting the audio, modifying a piece, and rejoining is IMPOSSIBLE. When
+asked for any of these, use the ambiguity path with a clarifying question:
+- "Reverse only the first N seconds" (or any time range)
+- "Apply gain / normalize / speed / fade to ONLY a section"
+- "Insert silence / audio at a position"
+- "Crossfade between clips"
+Example response for "reverse the first 30 seconds": "I can only reverse
+the entire audio. Would you prefer that, or would you like to keep just
+the first 30 seconds (without reversing them)?"
+
 AMBIGUITY HANDLING:
 If the user's request is genuinely unclear (e.g., "do something cool",
 "make it better"), return ZERO tool calls and put a short clarifying
