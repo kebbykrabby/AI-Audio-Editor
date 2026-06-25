@@ -301,6 +301,96 @@ async def merge_channels(
 _FILTERGRAPH_INLINE_MAX = 4000
 
 
+def _build_apply_to_range_filtergraph(
+    start_sec: float,
+    end_sec: float,
+    duration_sec: float,
+    range_filter: str,
+) -> str:
+    """Filtergraph that splits the input audio into [0..start, start..end,
+    end..duration], applies `range_filter` to the middle, and concats
+    everything back. Output duration equals input duration.
+
+    `range_filter` is a comma-separated FFmpeg filter expression applied to
+    just the middle range (no leading/trailing commas), e.g., "areverse" or
+    "volume=3dB".
+
+    Edge cases handled:
+    - start_sec == 0    → no pre section
+    - end_sec   == duration_sec → no post section
+    - both → equivalent to applying `range_filter` to the whole asset
+    """
+    parts: list[str] = []
+    labels: list[str] = []
+
+    if start_sec > 0:
+        parts.append(f"[0:a]atrim=0:{start_sec},asetpts=N/SR/TB[pre]")
+        labels.append("[pre]")
+
+    parts.append(
+        f"[0:a]atrim={start_sec}:{end_sec},asetpts=N/SR/TB,{range_filter}[mid]"
+    )
+    labels.append("[mid]")
+
+    if end_sec < duration_sec:
+        parts.append(f"[0:a]atrim={end_sec},asetpts=N/SR/TB[post]")
+        labels.append("[post]")
+
+    concat = "".join(labels) + f"concat=n={len(labels)}:v=0:a=1[out]"
+    return ";".join(parts + [concat])
+
+
+async def reverse_range(
+    input_path: Path,
+    output_path: Path,
+    start_sec: float,
+    end_sec: float,
+    duration_sec: float,
+) -> ProcessingResult:
+    """Reverse just the audio in [start_sec, end_sec]; leave the rest unchanged.
+    Output duration equals input duration.
+
+    Contract (caller-enforced): 0 <= start_sec < end_sec <= duration_sec.
+    """
+    fg = _build_apply_to_range_filtergraph(
+        start_sec, end_sec, duration_sec, "areverse",
+    )
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-filter_complex", fg,
+        "-map", "[out]",
+        str(output_path),
+        timeout=600,
+    )
+    return ProcessingResult(success=True)
+
+
+async def gain_range(
+    input_path: Path,
+    output_path: Path,
+    start_sec: float,
+    end_sec: float,
+    gain_db: float,
+    duration_sec: float,
+) -> ProcessingResult:
+    """Adjust volume by gain_db only in [start_sec, end_sec]; leave the rest
+    unchanged. Output duration equals input duration.
+
+    Contract (caller-enforced): 0 <= start_sec < end_sec <= duration_sec.
+    """
+    fg = _build_apply_to_range_filtergraph(
+        start_sec, end_sec, duration_sec, f"volume={gain_db}dB",
+    )
+    await _run_ffmpeg(
+        "-i", str(input_path),
+        "-filter_complex", fg,
+        "-map", "[out]",
+        str(output_path),
+        timeout=600,
+    )
+    return ProcessingResult(success=True)
+
+
 def _decode_pcm_sync(input_path: Path) -> tuple[np.ndarray, int, int]:
     """Decode the full audio stream to interleaved s16le PCM at native SR and
     channel count. Returns (samples_as_2D[frames, channels], sample_rate, channels).

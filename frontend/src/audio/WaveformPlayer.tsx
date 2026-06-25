@@ -24,7 +24,9 @@ function nleStepRange(step: NleStepLike, assetDuration: number): [number, number
   const num = (k: string) => (typeof p[k] === "number" ? (p[k] as number) : null);
   switch (step.operation.type) {
     case "trim":
-    case "delete": {
+    case "delete":
+    case "reverse_range":
+    case "gain_range": {
       const s = num("start_sec");
       const e = num("end_sec");
       return s !== null && e !== null && e > s ? [s, e] : null;

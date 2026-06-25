@@ -18,10 +18,12 @@ from app.schemas.operation import (
     FadeInParams,
     FadeOutParams,
     GainParams,
+    GainRangeParams,
     MonoMixdownParams,
     NormalizeParams,
     RemoveSilenceParams,
     ReverseParams,
+    ReverseRangeParams,
     SpeedParams,
     SwapChannelsParams,
     TrimParams,
@@ -99,16 +101,19 @@ ORDER MATTERS — when chaining ops, the canonical order is:
 4. Volume shaping (gain) and finishing (normalize).
 5. fade_in / fade_out LAST so they anchor to the final asset edges.
 
-UNSUPPORTED INTENTS — there is NO concat/join tool, so anything that needs
-splitting the audio, modifying a piece, and rejoining is IMPOSSIBLE. When
-asked for any of these, use the ambiguity path with a clarifying question:
-- "Reverse only the first N seconds" (or any time range)
-- "Apply gain / normalize / speed / fade to ONLY a section"
+PARTIAL-RANGE OPERATIONS — when the user wants to modify part of the audio
+and leave the rest unchanged, use the dedicated tools (not trim/delete +
+chaining):
+- "Reverse only the first 30 seconds" → reverse_range(0, 30). The rest of
+  the audio stays untouched and the output keeps its original duration.
+- "Make the chorus louder by 3 dB" / "boost 1:00-1:30 by +6 dB" →
+  gain_range(start_sec, end_sec, gain_db).
+
+UNSUPPORTED INTENTS — these still cannot be expressed with the current
+tools. Use the ambiguity path with a clarifying question:
+- "Apply normalize / speed / fade to ONLY a section"
 - "Insert silence / audio at a position"
 - "Crossfade between clips"
-Example response for "reverse the first 30 seconds": "I can only reverse
-the entire audio. Would you prefer that, or would you like to keep just
-the first 30 seconds (without reversing them)?"
 
 AMBIGUITY HANDLING:
 If the user's request is genuinely unclear (e.g., "do something cool",
@@ -213,6 +218,18 @@ _OP_DESCRIPTIONS: dict[str, str] = {
         "(typically -3 to -1)."
     ),
     "reverse": "Reverse the entire audio. No parameters.",
+    "reverse_range": (
+        "Reverse only the audio in [start_sec, end_sec]; everything outside "
+        "that range is unchanged. Output duration equals input duration. Use "
+        "this when the user asks to reverse a sub-section (e.g. 'reverse the "
+        "first 30 seconds')."
+    ),
+    "gain_range": (
+        "Adjust volume by gain_db (-60..+24) ONLY in [start_sec, end_sec]; "
+        "leave the rest unchanged. Output duration equals input duration. Use "
+        "this when the user asks to make a specific section louder or quieter "
+        "(e.g. 'boost the chorus by 3 dB')."
+    ),
     "remove_silence": (
         "Detect and remove silent gaps below threshold_db that last at least "
         "min_silence_sec. Output is shorter than input."
@@ -240,8 +257,10 @@ _OP_PARAMS: dict[str, type] = {
     "fade_in": FadeInParams,
     "fade_out": FadeOutParams,
     "gain": GainParams,
+    "gain_range": GainRangeParams,
     "normalize": NormalizeParams,
     "reverse": ReverseParams,
+    "reverse_range": ReverseRangeParams,
     "remove_silence": RemoveSilenceParams,
     "speed": SpeedParams,
     "mono_mixdown": MonoMixdownParams,

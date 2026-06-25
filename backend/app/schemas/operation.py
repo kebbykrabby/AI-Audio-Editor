@@ -69,6 +69,19 @@ class MergeChannelsParams(BaseModel):
     right_asset_id: str
 
 
+class ReverseRangeParams(BaseModel):
+    """Reverse only [start_sec, end_sec], keep the rest unchanged."""
+    start_sec: float = Field(ge=0)
+    end_sec: float = Field(gt=0)
+
+
+class GainRangeParams(BaseModel):
+    """Apply gain_db only in [start_sec, end_sec]."""
+    start_sec: float = Field(ge=0)
+    end_sec: float = Field(gt=0)
+    gain_db: float = Field(ge=-60, le=24)
+
+
 class RemoveSegmentsInterval(BaseModel):
     start: float = Field(ge=0)
     end: float = Field(gt=0)
@@ -181,6 +194,16 @@ class CensorSegmentsOperation(BaseModel):
     parameters: CensorSegmentsParams
 
 
+class ReverseRangeOperation(BaseModel):
+    type: Literal["reverse_range"]
+    parameters: ReverseRangeParams
+
+
+class GainRangeOperation(BaseModel):
+    type: Literal["gain_range"]
+    parameters: GainRangeParams
+
+
 OperationRequest = Annotated[
     TrimOperation
     | DeleteOperation
@@ -197,7 +220,9 @@ OperationRequest = Annotated[
     | SplitChannelsOperation
     | MergeChannelsOperation
     | RemoveSegmentsOperation
-    | CensorSegmentsOperation,
+    | CensorSegmentsOperation
+    | ReverseRangeOperation
+    | GainRangeOperation,
     Field(discriminator="type"),
 ]
 

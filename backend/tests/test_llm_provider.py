@@ -254,11 +254,13 @@ def test_system_prompt_states_channel_count_for_validation():
 def test_tool_catalog_has_all_supported_ops():
     catalog = build_tool_catalog()
     names = {t.name for t in catalog}
-    # The 12 operations the design doc commits to.
+    # Original 12 from the design doc plus the partial-range ops added during
+    # Phase 4 dogfood to satisfy intents like "reverse the first 30 seconds".
     expected = {
         "trim", "delete", "fade_in", "fade_out", "gain", "normalize",
         "reverse", "remove_silence", "speed",
         "mono_mixdown", "swap_channels", "extract_channel",
+        "reverse_range", "gain_range",
     }
     assert names == expected
 

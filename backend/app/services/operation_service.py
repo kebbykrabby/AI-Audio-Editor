@@ -470,6 +470,21 @@ async def _dispatch_async(
             input_path, output_path,
             intervals=merged, duration_sec=duration, crossfade_ms=crossfade_ms,
         )
+    if op_type == "reverse_range":
+        return await ffmpeg_proc.reverse_range(
+            input_path, output_path,
+            start_sec=float(params["start_sec"]),
+            end_sec=float(params["end_sec"]),
+            duration_sec=duration,
+        )
+    if op_type == "gain_range":
+        return await ffmpeg_proc.gain_range(
+            input_path, output_path,
+            start_sec=float(params["start_sec"]),
+            end_sec=float(params["end_sec"]),
+            gain_db=float(params["gain_db"]),
+            duration_sec=duration,
+        )
     if op_type == "censor_segments":
         intervals_raw = params["intervals"]
         intervals = [(float(iv["start"]), float(iv["end"])) for iv in intervals_raw]
@@ -530,7 +545,7 @@ def _merge_adjacent(
 
 
 def _validate_params(op_type: str, params: dict, duration: float) -> None:
-    if op_type in ("trim", "delete"):
+    if op_type in ("trim", "delete", "reverse_range", "gain_range"):
         start = params["start_sec"]
         end = params["end_sec"]
         if start >= end:

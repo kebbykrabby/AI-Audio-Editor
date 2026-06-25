@@ -34,7 +34,7 @@ function previewRange(step: NlePlanStep): [number, number] | null {
   const num = (k: string) =>
     typeof p[k] === "number" ? (p[k] as number) : null;
 
-  if (t === "trim" || t === "delete") {
+  if (t === "trim" || t === "delete" || t === "reverse_range" || t === "gain_range") {
     const s = num("start_sec");
     const e = num("end_sec");
     return s !== null && e !== null && e > s ? [s, e] : null;

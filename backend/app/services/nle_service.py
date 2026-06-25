@@ -43,10 +43,12 @@ from app.schemas.operation import (
     FadeInParams,
     FadeOutParams,
     GainParams,
+    GainRangeParams,
     MonoMixdownParams,
     NormalizeParams,
     RemoveSilenceParams,
     ReverseParams,
+    ReverseRangeParams,
     SpeedParams,
     SwapChannelsParams,
     TrimParams,
@@ -145,8 +147,10 @@ _VALIDATORS: dict[str, type] = {
     "fade_in": FadeInParams,
     "fade_out": FadeOutParams,
     "gain": GainParams,
+    "gain_range": GainRangeParams,
     "normalize": NormalizeParams,
     "reverse": ReverseParams,
+    "reverse_range": ReverseRangeParams,
     "remove_silence": RemoveSilenceParams,
     "speed": SpeedParams,
     "mono_mixdown": MonoMixdownParams,
@@ -180,6 +184,15 @@ def _describe_step(call: ToolCall) -> str:
         return f"Normalize peak to {p.get('target_db', -3)} dB"
     if n == "reverse":
         return "Reverse the audio"
+    if n == "reverse_range":
+        return f"Reverse audio from {p.get('start_sec', 0):.2f}s to {p.get('end_sec', 0):.2f}s"
+    if n == "gain_range":
+        db = p.get("gain_db", 0)
+        sign = "+" if db >= 0 else ""
+        return (
+            f"Adjust volume by {sign}{db} dB from "
+            f"{p.get('start_sec', 0):.2f}s to {p.get('end_sec', 0):.2f}s"
+        )
     if n == "remove_silence":
         return (
             f"Remove silence below {p.get('threshold_db', -40)} dB lasting "
