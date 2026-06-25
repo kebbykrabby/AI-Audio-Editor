@@ -341,6 +341,71 @@ async def test_plan_cross_user_poll_returns_404(
 # --- Transcript cache shared across AI features ----------------------------
 
 
+async def test_transient_llm_error_leaves_op_running_for_dramatiq_retry(
+    client, stub_broker, auth_user, stereo_music_wav,
+):
+    """Transient LLMProviderError (provider_unavailable / rate_limited) should
+    re-raise so Dramatiq's max_retries=2 kicks in. The op row stays in
+    `running` so the retry can re-claim it; only after attempt_count hits 3
+    does it get marked `failed` permanently.
+    """
+    from app.providers.llm import LLMProviderError
+    from app.services import nle_service
+
+    _install_fake_transcript()
+
+    # Provider that always raises a transient error.
+    class _Always503:
+        async def generate_plan(self, **kwargs):
+            raise LLMProviderError("provider_unavailable", "fake 503")
+
+    nle_service._llm_provider = _Always503()
+    asset_id = await _upload_and_ready(client, stub_broker, auth_user, stereo_music_wav)
+
+    # Submit the plan request the normal way.
+    r = await client.post(
+        f"/api/assets/{asset_id}/ai/plan",
+        headers=auth_user["headers"],
+        json={"prompt": "trim to first 1 sec"},
+    )
+    op_id = r.json()["operationId"]
+
+    # Drain once. The transient error should re-raise; drain swallows it but the
+    # op row should NOT be in terminal state — attempt_count was 1, retries remain.
+    await drain_jobs_async(stub_broker)
+    poll = await client.get(f"/api/operations/{op_id}", headers=auth_user["headers"])
+    body = poll.json()
+    assert body["status"] != "completed"
+    assert body["status"] != "failed", (
+        f"Op should still be retryable after 1 transient failure, got: {body}"
+    )
+
+    # Simulate retries exhausted: manually bump attempt_count to 3 and re-run
+    # the job directly. Now the error must mark the row failed permanently.
+    from app.models.operation import Operation
+    from app.workers.db import SyncSession
+    with SyncSession() as db:
+        op = db.get(Operation, op_id)
+        op.attempt_count = 3
+        op.status = "queued"  # allow re-claim
+        db.commit()
+
+    from app.services.nle_service import _run_ai_nle_plan_job_async
+    db2 = SyncSession()
+    try:
+        try:
+            await _run_ai_nle_plan_job_async(db2, op_id)
+        except LLMProviderError:
+            pass
+    finally:
+        db2.close()
+
+    poll = await client.get(f"/api/operations/{op_id}", headers=auth_user["headers"])
+    body = poll.json()
+    assert body["status"] == "failed"
+    assert body["error"]["code"] == "AI_PROVIDER_UNAVAILABLE"
+
+
 async def test_nle_plan_reuses_transcript_cache_from_filler_detect(
     client, stub_broker, auth_user, stereo_music_wav,
 ):

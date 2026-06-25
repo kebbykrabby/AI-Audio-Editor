@@ -436,13 +436,28 @@ async def _run_ai_nle_plan_job_async(db: Session, operation_id: str) -> None:
     except LLMProviderError as e:
         db.rollback()
         op = db.get(Operation, operation_id)
-        if op is not None:
-            op.status = "failed"
-            op.error_code = _ai_error_code_for(e.kind)
-            op.error_message = str(e)[:500]
-            op.completed_at = datetime.utcnow()
-            op.updated_at = op.completed_at
-            db.commit()
+        if op is None:
+            raise
+        # Transient errors (provider 503 + 429) get Dramatiq retries. Only mark
+        # the op `failed` if we are out of retries — re-raising leaves the row
+        # in `running` so the next claim (after Dramatiq backs off) finds it
+        # via the IN ('queued', 'running') filter at the top of this function.
+        # max_retries=2 on the actor → 3 total attempts. attempt_count is
+        # incremented at claim time so it's 1, 2, or 3 when we land here.
+        is_transient = e.kind in ("provider_unavailable", "rate_limited")
+        retries_remaining = op.attempt_count < 3
+        if is_transient and retries_remaining:
+            logger.info(
+                "NLE op %s transient error (%s); attempt %d/3 — Dramatiq will retry",
+                operation_id, e.kind, op.attempt_count,
+            )
+            raise
+        op.status = "failed"
+        op.error_code = _ai_error_code_for(e.kind)
+        op.error_message = str(e)[:500]
+        op.completed_at = datetime.utcnow()
+        op.updated_at = op.completed_at
+        db.commit()
     except OperationError as e:
         db.rollback()
         op = db.get(Operation, operation_id)
