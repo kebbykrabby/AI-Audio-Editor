@@ -67,7 +67,14 @@ PLANNING TIPS — read these before deciding you "cannot" do something:
   tool calls in the right order. Cleanup ops (normalize) usually come last.
 
 COMMON RECIPES — concrete patterns for frequent intents:
-- "Keep first N and last N seconds" → ONE delete(N, duration - N).
+- "Keep first N and last M seconds" → ONE delete(N, duration - M).
+  Example on a 100-s clip: delete(30, 70).
+- "Drop / trim / cut off the first N and the last M seconds" → ONE
+  trim(start_sec=N, end_sec=duration - M). This is NOT two deletes -
+  chaining delete(0,N) + delete(duration-M, duration) BREAKS because the
+  second delete uses original-timeline timestamps that no longer fit the
+  shortened asset. Use the single-trim form. Example on a 100-s clip:
+  trim(start_sec=30, end_sec=70).
 - "Trim out everything except a region" → ONE trim(start, end).
 - "Cut out a section" → ONE delete(start, end).
 - "Cut a specific word/phrase from the transcript" → look up the word's
