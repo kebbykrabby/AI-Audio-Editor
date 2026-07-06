@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, LargeBinary, String, Text
+from sqlalchemy import ForeignKey, Index, LargeBinary, SmallInteger, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import JSON_COL, UUID_COL, Base
@@ -76,4 +76,25 @@ class RefreshToken(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
+
+class EmailVerificationCode(Base):
+    """One-time code used to verify a user's email before their first export.
+
+    Codes are 6 digits; the DB row stores only a SHA-256 hash so a leaked backup
+    can't be replayed. `attempts_remaining` guards against online guessing.
+    """
+    __tablename__ = "email_verification_codes"
+    __table_args__ = (
+        Index("ix_email_verify_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID_COL, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        UUID_COL, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[bytes] = mapped_column(LargeBinary(32))
+    expires_at: Mapped[datetime] = mapped_column()
+    attempts_remaining: Mapped[int] = mapped_column(SmallInteger, default=5)
+    consumed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 

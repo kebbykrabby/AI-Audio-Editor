@@ -43,3 +43,15 @@ export async function me(): Promise<User> {
 export async function oauthStart(provider: "google" | "apple"): Promise<{ redirectUrl: string }> {
   return apiFetch<{ redirectUrl: string }>(`/api/auth/oauth/${provider}/start`, { method: "GET" });
 }
+
+export async function requestEmailVerify(): Promise<void> {
+  await apiFetch<void>("/api/auth/email/request-verify", { method: "POST" });
+}
+
+export async function verifyEmail(code: string): Promise<User> {
+  return apiFetch<User>("/api/auth/email/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+}

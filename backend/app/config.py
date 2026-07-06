@@ -61,6 +61,23 @@ class Settings(BaseSettings):
     APPLE_PRIVATE_KEY_PATH: str | None = None  # path to AuthKey_XXX.p8
     APPLE_REDIRECT_URI: str = "http://localhost:8000/api/auth/oauth/apple/callback"
 
+    # Email verification (gates the first export for password-signup users;
+    # OAuth users skip the gate because the provider already verified them).
+    # "console" = log the code to stdout (dev default; no external SMTP required).
+    # "smtp"    = send via SMTP (fill EMAIL_SMTP_* below when you turn this on).
+    EMAIL_PROVIDER: str = "console"
+    EMAIL_FROM: str = "no-reply@localhost"
+    EMAIL_FROM_NAME: str = "Cutwise"
+    EMAIL_SMTP_HOST: str | None = None
+    EMAIL_SMTP_PORT: int = 587
+    EMAIL_SMTP_USER: str | None = None
+    EMAIL_SMTP_PASSWORD: str | None = None
+    EMAIL_SMTP_USE_TLS: bool = True
+    EMAIL_VERIFY_TTL_MIN: int = 15
+    EMAIL_VERIFY_MAX_ATTEMPTS: int = 5
+    EMAIL_VERIFY_RATE_PER_MIN: int = 1  # code-request throttle per user
+    EMAIL_VERIFY_RATE_PER_HOUR: int = 5
+
     # AI / transcription
     # "fake"   = FakeTranscriptionProvider (default; used by tests + offline dev)
     # "local"  = LocalWhisperProvider via faster-whisper (no API key, no cost)

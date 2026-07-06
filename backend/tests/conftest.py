@@ -166,8 +166,15 @@ async def register_user(
     email: str | None = None,
     password: str = "test-password-12345",
     display_name: str = "Tester",
+    verify_email: bool = True,
 ) -> dict:
-    """Register a fresh user. Returns {email, password, userId, accessToken, headers}."""
+    """Register a fresh user. Returns {email, password, userId, accessToken, headers}.
+
+    By default the returned user is email-verified (via a direct DB stamp),
+    because most integration tests don't care about the verification flow but
+    DO care about post-signup features (export, etc.) that gate on it. Pass
+    verify_email=False when the test wants to exercise the gate itself.
+    """
     email = email or f"test-{secrets.token_hex(4)}@example.com"
     r = await client.post(
         "/api/auth/register",
@@ -175,10 +182,23 @@ async def register_user(
     )
     assert r.status_code == 201, f"register failed: {r.status_code} {r.text}"
     data = r.json()
+    user_id = data["user"]["userId"]
+
+    if verify_email:
+        from datetime import datetime
+
+        from app.database import async_session
+        from app.models.user import User
+
+        async with async_session() as db:
+            u = await db.get(User, user_id)
+            u.email_verified_at = datetime.utcnow()
+            await db.commit()
+
     return {
         "email": email,
         "password": password,
-        "userId": data["user"]["userId"],
+        "userId": user_id,
         "accessToken": data["accessToken"],
         "headers": {"Authorization": f"Bearer {data['accessToken']}"},
     }

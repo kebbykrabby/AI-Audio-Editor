@@ -27,3 +27,7 @@ class TokenResponse(BaseModel):
 
 class OAuthStartResponse(BaseModel):
     redirectUrl: str
+
+
+class VerifyEmailRequest(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")

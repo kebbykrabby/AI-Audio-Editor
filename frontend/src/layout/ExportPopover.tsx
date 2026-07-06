@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { enqueueExport, pollExport } from "../api/export";
 import { useEditorStore } from "../store/editorStore";
+import { useAuthStore } from "../store/authStore";
 import { ApiRequestError } from "../api/client";
+import EmailVerificationModal from "./EmailVerificationModal";
 
 type Format = "wav" | "mp3";
 type SampleRate = "source" | 22050 | 44100 | 48000;
@@ -20,12 +22,14 @@ export default function ExportPopover() {
   const asset = useEditorStore((s) => s.currentAsset());
   const channelEdit = useEditorStore((s) => s.channelEdit);
   const setError = useEditorStore((s) => s.setError);
+  const user = useAuthStore((s) => s.user);
 
   const [open, setOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [format, setFormat] = useState<Format>("wav");
   const [sampleRate, setSampleRate] = useState<SampleRate>("source");
   const [bitrate, setBitrate] = useState<Bitrate>(192);
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -48,8 +52,8 @@ export default function ExportPopover() {
     };
   }, [open]);
 
-  const handleExport = async () => {
-    if (!asset || isExporting) return;
+  const runExport = async () => {
+    if (!asset) return;
     setIsExporting(true);
     try {
       const sr = sampleRate === "source" ? undefined : sampleRate;
@@ -65,6 +69,11 @@ export default function ExportPopover() {
       a.remove();
       setOpen(false);
     } catch (e: unknown) {
+      if (e instanceof ApiRequestError && e.code === "EMAIL_VERIFICATION_REQUIRED") {
+        // Pop the verification modal; on success, `handleVerified` retries the export.
+        setShowVerifyModal(true);
+        return;
+      }
       const msg =
         e instanceof ApiRequestError
           ? `${e.code}: ${e.message}`
@@ -75,6 +84,16 @@ export default function ExportPopover() {
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const handleExport = async () => {
+    if (!asset || isExporting) return;
+    await runExport();
+  };
+
+  const handleVerified = async () => {
+    setShowVerifyModal(false);
+    await runExport();
   };
 
   if (!asset) return null;
@@ -170,6 +189,14 @@ export default function ExportPopover() {
             {isExporting ? "Exporting…" : "Download"}
           </button>
         </div>
+      )}
+
+      {showVerifyModal && user?.email && (
+        <EmailVerificationModal
+          email={user.email}
+          onClose={() => setShowVerifyModal(false)}
+          onVerified={handleVerified}
+        />
       )}
     </div>
   );

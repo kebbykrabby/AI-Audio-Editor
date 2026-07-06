@@ -89,5 +89,5 @@ def refresh_token_expiry() -> datetime:
     return datetime.utcnow() + timedelta(days=settings.REFRESH_TTL_DAYS)
 
 
-def otp_expiry() -> datetime:
-    return datetime.utcnow() + timedelta(minutes=settings.OTP_TTL_MIN)
+def email_verify_expiry() -> datetime:
+    return datetime.utcnow() + timedelta(minutes=settings.EMAIL_VERIFY_TTL_MIN)

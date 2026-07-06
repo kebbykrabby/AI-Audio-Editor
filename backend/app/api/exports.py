@@ -7,6 +7,8 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.export import ExportRequest, ExportResponse
 from app.services import export_service
+from app.services.auth_service import AuthError
+from app.services.email_verification_service import require_email_verified
 from app.services.export_service import ExportError
 
 router = APIRouter(tags=["exports"])
@@ -23,6 +25,14 @@ async def enqueue_export(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    try:
+        require_email_verified(user)
+    except AuthError as e:
+        return JSONResponse(
+            status_code=e.status,
+            content={"error": {"code": e.code, "message": e.message}},
+        )
+
     try:
         export = await export_service.enqueue_export(
             db,

@@ -33,7 +33,6 @@ const SKIP_REFRESH_URLS = [
   "/api/auth/refresh",
   "/api/auth/login",
   "/api/auth/register",
-  "/api/auth/phone/verify-otp",
 ];
 
 let refreshInFlight: Promise<string | null> | null = null;

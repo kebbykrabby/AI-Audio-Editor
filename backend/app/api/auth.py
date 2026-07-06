@@ -16,8 +16,9 @@ from app.schemas.auth import (
     RegisterRequest,
     TokenResponse,
     UserResponse,
+    VerifyEmailRequest,
 )
-from app.services import auth_service, oauth_service
+from app.services import auth_service, email_verification_service, oauth_service
 from app.services.auth_service import AuthError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -155,6 +156,33 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
 
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)):
+    return _user_to_response(user)
+
+
+# ----- Email verification (gates first export for password-signup users) -----
+
+@router.post("/email/request-verify", status_code=204)
+async def request_email_verify(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await email_verification_service.request_code(db, user)
+    except AuthError as e:
+        raise _auth_error_http(e)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/email/verify", response_model=UserResponse)
+async def verify_email(
+    body: VerifyEmailRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await email_verification_service.verify_code(db, user, body.code)
+    except AuthError as e:
+        raise _auth_error_http(e)
     return _user_to_response(user)
 
 
