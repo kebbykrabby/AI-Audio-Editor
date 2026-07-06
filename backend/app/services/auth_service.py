@@ -42,11 +42,6 @@ async def _find_user_by_email(db: AsyncSession, email: str) -> User | None:
     return res.scalar_one_or_none()
 
 
-async def _find_user_by_phone(db: AsyncSession, phone: str) -> User | None:
-    res = await db.execute(select(User).where(User.phone_number == phone))
-    return res.scalar_one_or_none()
-
-
 async def issue_tokens(
     db: AsyncSession,
     user: User,
@@ -231,28 +226,3 @@ async def link_or_create_for_oauth(
     return user, tokens
 
 
-async def link_or_create_for_phone(
-    db: AsyncSession,
-    phone_number: str,
-    user_agent: str | None,
-    ip_address: str | None,
-) -> tuple[User, IssuedTokens]:
-    user = await _find_user_by_phone(db, phone_number)
-    if user is None:
-        user = User(
-            phone_number=phone_number,
-            phone_verified_at=datetime.utcnow(),
-        )
-        db.add(user)
-        await db.flush()
-        db.add(Identity(
-            user_id=user.id,
-            provider="phone",
-            provider_user_id=phone_number,
-        ))
-    elif user.phone_verified_at is None:
-        user.phone_verified_at = datetime.utcnow()
-
-    tokens = await issue_tokens(db, user, user_agent, ip_address)
-    await db.commit()
-    return user, tokens

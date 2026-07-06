@@ -11,7 +11,7 @@ export default function UserMenu() {
 
   if (!user) return null;
 
-  const label = user.displayName || user.email || user.phoneNumber || "Account";
+  const label = user.displayName || user.email || "Account";
 
   const onLogout = async () => {
     setBusy(true);

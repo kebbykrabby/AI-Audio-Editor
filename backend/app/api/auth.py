@@ -14,12 +14,10 @@ from app.schemas.auth import (
     LoginRequest,
     OAuthStartResponse,
     RegisterRequest,
-    RequestOtpRequest,
     TokenResponse,
     UserResponse,
-    VerifyOtpRequest,
 )
-from app.services import auth_service, oauth_service, otp_service
+from app.services import auth_service, oauth_service
 from app.services.auth_service import AuthError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -40,10 +38,8 @@ def _user_to_response(user: User) -> UserResponse:
     return UserResponse(
         userId=user.id,
         email=user.email,
-        phoneNumber=user.phone_number,
         displayName=user.display_name,
         emailVerified=user.email_verified_at is not None,
-        phoneVerified=user.phone_verified_at is not None,
     )
 
 
@@ -160,34 +156,6 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
 @router.get("/me", response_model=UserResponse)
 async def me(user: User = Depends(get_current_user)):
     return _user_to_response(user)
-
-
-# ----- Phone OTP -----
-
-@router.post("/phone/request-otp", status_code=204)
-async def request_phone_otp(
-    body: RequestOtpRequest, request: Request, db: AsyncSession = Depends(get_db)
-):
-    try:
-        await otp_service.request_otp(db, body.phone_number, _client_ip(request))
-    except AuthError as e:
-        raise _auth_error_http(e)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post("/phone/verify-otp", response_model=TokenResponse)
-async def verify_phone_otp(
-    body: VerifyOtpRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)
-):
-    try:
-        await otp_service.verify_otp(db, body.phone_number, body.code)
-        user, tokens = await auth_service.link_or_create_for_phone(
-            db, body.phone_number, _user_agent(request), _client_ip(request)
-        )
-    except AuthError as e:
-        raise _auth_error_http(e)
-    _set_auth_cookies(response, tokens.refresh_token_plain, tokens.csrf_token)
-    return _token_response(user, tokens.access_token, tokens.access_ttl_sec)
 
 
 # ----- OAuth (Google & Apple) -----

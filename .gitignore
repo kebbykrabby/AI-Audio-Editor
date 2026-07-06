@@ -47,5 +47,6 @@ test_files/
 # Self documantation
 docs/
 
-
+# base44 frontend harvest
+base44-harvest/
 

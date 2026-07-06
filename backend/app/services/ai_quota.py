@@ -1,6 +1,6 @@
 """Per-user admission-time rate limits for AI operations.
 
-Mirrors the DB-based pattern used by `services/otp_service._check_rate_limits`:
+Uses a DB-based sliding-window pattern:
 count recent rows in the relevant table (here, `operations`) within a sliding
 window. The `ix_operations_user_created` index makes this a cheap lookup even
 for users with thousands of ops.

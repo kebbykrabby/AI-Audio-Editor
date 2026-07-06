@@ -40,22 +40,6 @@ export async function me(): Promise<User> {
   return apiFetch<User>("/api/auth/me", { method: "GET" });
 }
 
-export async function requestOtp(phoneNumber: string): Promise<void> {
-  await apiFetch<void>("/api/auth/phone/request-otp", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone_number: phoneNumber }),
-  });
-}
-
-export async function verifyOtp(phoneNumber: string, code: string): Promise<TokenResponse> {
-  return apiFetch<TokenResponse>("/api/auth/phone/verify-otp", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone_number: phoneNumber, code }),
-  });
-}
-
 export async function oauthStart(provider: "google" | "apple"): Promise<{ redirectUrl: string }> {
   return apiFetch<{ redirectUrl: string }>(`/api/auth/oauth/${provider}/start`, { method: "GET" });
 }

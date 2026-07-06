@@ -49,19 +49,6 @@ class Settings(BaseSettings):
     CSRF_COOKIE_NAME: str = "csrf"
     CSRF_HEADER_NAME: str = "X-CSRF-Token"
 
-    # OTP
-    OTP_TTL_MIN: int = 10
-    OTP_MAX_ATTEMPTS: int = 5
-    OTP_RATE_PHONE_PER_MIN: int = 1
-    OTP_RATE_PHONE_PER_HOUR: int = 5
-    OTP_RATE_IP_PER_HOUR: int = 10
-
-    # SMS provider — "console" for local dev, "twilio" for prod
-    SMS_PROVIDER: str = "console"
-    TWILIO_ACCOUNT_SID: str | None = None
-    TWILIO_AUTH_TOKEN: str | None = None
-    TWILIO_FROM_NUMBER: str | None = None
-
     # Google OAuth
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_CLIENT_SECRET: str | None = None
@@ -113,7 +100,7 @@ class Settings(BaseSettings):
     # Plan-generation cap on tool calls (defense against runaway chains).
     NLE_MAX_TOOL_CALLS: int = 10
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()

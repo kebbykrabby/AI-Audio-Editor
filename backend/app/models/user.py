@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, LargeBinary, SmallInteger, String, Text
+from sqlalchemy import ForeignKey, Index, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import JSON_COL, UUID_COL, Base
@@ -17,8 +17,6 @@ class User(Base):
     id: Mapped[str] = mapped_column(UUID_COL, primary_key=True, default=_uuid)
     email: Mapped[str | None] = mapped_column(String(320), unique=True, nullable=True)
     email_verified_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    phone_number: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
-    phone_verified_at: Mapped[datetime | None] = mapped_column(nullable=True)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     # Per-user overrides for the curse-word censorship feature. Shape:
@@ -79,18 +77,3 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
 
-class OtpCode(Base):
-    __tablename__ = "otp_codes"
-    __table_args__ = (
-        Index("ix_otp_phone_created", "phone_number", "created_at"),
-        Index("ix_otp_ip_created", "ip_address", "created_at"),
-    )
-
-    id: Mapped[str] = mapped_column(UUID_COL, primary_key=True, default=_uuid)
-    phone_number: Mapped[str] = mapped_column(String(32))
-    code_hash: Mapped[bytes] = mapped_column(LargeBinary(32))
-    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    expires_at: Mapped[datetime] = mapped_column()
-    attempts_remaining: Mapped[int] = mapped_column(SmallInteger, default=5)
-    consumed_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)

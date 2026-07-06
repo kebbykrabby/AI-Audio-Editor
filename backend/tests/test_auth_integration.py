@@ -1,4 +1,4 @@
-"""Auth integration tests: register, login, refresh, logout, OTP, OAuth.
+"""Auth integration tests: register, login, refresh, logout, OAuth.
 
 Exercises the HTTP surface end-to-end against the in-process app + StubBroker.
 """
@@ -123,44 +123,6 @@ async def test_logout_revokes_refresh(client):
         headers={"X-CSRF-Token": csrf, "Cookie": f"refresh={refresh_cookie}; csrf={csrf}"},
     )
     assert r2.status_code == 401
-
-
-# --- OTP ------------------------------------------------------------------
-
-async def test_otp_request_and_verify(client, monkeypatch):
-    """Console SMS provider is the default under TESTING; we intercept the code
-    generator so the test knows which 6-digit code to present."""
-    fixed = "424242"
-    monkeypatch.setattr("app.core.security.generate_otp_code", lambda: fixed)
-    # The otp_service imports generate_otp_code from app.core.security;
-    # patching the source module makes the binding in otp_service resolve to the stub.
-    monkeypatch.setattr("app.services.otp_service.generate_otp_code", lambda: fixed)
-
-    phone = "+15555550123"
-    r1 = await client.post("/api/auth/phone/request-otp", json={"phone_number": phone})
-    assert r1.status_code == 204, r1.text
-
-    r2 = await client.post(
-        "/api/auth/phone/verify-otp",
-        json={"phone_number": phone, "code": fixed},
-    )
-    assert r2.status_code == 200, r2.text
-    assert r2.json()["accessToken"]
-    assert r2.json()["user"]["phoneNumber"] == phone
-
-
-async def test_otp_wrong_code_rejected(client, monkeypatch):
-    monkeypatch.setattr("app.core.security.generate_otp_code", lambda: "111111")
-    monkeypatch.setattr("app.services.otp_service.generate_otp_code", lambda: "111111")
-    phone = "+15555550124"
-    await client.post("/api/auth/phone/request-otp", json={"phone_number": phone})
-
-    r = await client.post(
-        "/api/auth/phone/verify-otp",
-        json={"phone_number": phone, "code": "000000"},
-    )
-    assert r.status_code >= 400
-    assert "error" in r.text.lower() or "otp" in r.text.lower() or "invalid" in r.text.lower()
 
 
 # --- OAuth (mocked provider) ----------------------------------------------

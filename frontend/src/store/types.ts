@@ -1,10 +1,8 @@
 export interface User {
   userId: string;
   email: string | null;
-  phoneNumber: string | null;
   displayName: string | null;
   emailVerified: boolean;
-  phoneVerified: boolean;
 }
 
 export interface Asset {

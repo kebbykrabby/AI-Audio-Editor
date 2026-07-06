@@ -3,10 +3,9 @@ import { me } from "../api/auth";
 import { useAuthStore } from "../store/authStore";
 import LoginForm from "./LoginForm";
 import OAuthButtons from "./OAuthButtons";
-import PhoneOtpForm from "./PhoneOtpForm";
 import RegisterForm from "./RegisterForm";
 
-type Tab = "login" | "register" | "phone";
+type Tab = "login" | "register";
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -76,7 +75,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         <h1 className="text-lg font-semibold text-slate-100 mb-4">AI Audio Editor</h1>
 
         <div className="flex gap-1 mb-4 text-sm">
-          {(["login", "register", "phone"] as Tab[]).map((t) => (
+          {(["login", "register"] as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
@@ -87,14 +86,13 @@ export default function AuthGate({ children }: { children: ReactNode }) {
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              {t === "login" ? "Sign in" : t === "register" ? "Register" : "Phone"}
+              {t === "login" ? "Sign in" : "Register"}
             </button>
           ))}
         </div>
 
         {tab === "login" && <LoginForm />}
         {tab === "register" && <RegisterForm />}
-        {tab === "phone" && <PhoneOtpForm />}
 
         <div className="my-4 border-t border-slate-800" />
 

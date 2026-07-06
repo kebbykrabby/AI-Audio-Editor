@@ -1,4 +1,4 @@
-"""Pure-function auth tests: password, JWT, opaque tokens, OTP.
+"""Pure-function auth tests: password hashing, JWT, opaque tokens, code generator.
 
 No DB, no HTTP — these cover the primitives in app.core.security.
 """

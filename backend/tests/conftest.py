@@ -68,10 +68,6 @@ def test_env(tmp_path, monkeypatch):
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("TESTING", "1")
     monkeypatch.setenv("JWT_SECRET", "test-secret-" + "x" * 40)
-    # Loosen OTP rate limits so tests can run without artificial waits.
-    monkeypatch.setenv("OTP_RATE_PHONE_PER_MIN", "100")
-    monkeypatch.setenv("OTP_RATE_PHONE_PER_HOUR", "1000")
-    monkeypatch.setenv("OTP_RATE_IP_PER_HOUR", "1000")
 
     for name in list(sys.modules):
         if name.startswith("app."):
