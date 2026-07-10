@@ -2,7 +2,13 @@ from app.models.analysis import Analysis
 from app.models.asset import Asset
 from app.models.export import Export
 from app.models.operation import Operation
-from app.models.user import EmailVerificationCode, Identity, RefreshToken, User
+from app.models.user import (
+    EmailVerificationCode,
+    Identity,
+    PasswordResetCode,
+    RefreshToken,
+    User,
+)
 
 __all__ = [
     "Analysis",
@@ -11,6 +17,7 @@ __all__ = [
     "Export",
     "Identity",
     "Operation",
+    "PasswordResetCode",
     "RefreshToken",
     "User",
 ]

@@ -77,6 +77,30 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
 
+class PasswordResetCode(Base):
+    """One-time code for the forgot-password flow.
+
+    Same shape as EmailVerificationCode but keyed by (user_id) at generation
+    time (the anon caller supplies an email, we look up the user, then attach).
+    Kept as a separate table so the two flows can be rate-limited independently
+    and consumed rows don't leak between them.
+    """
+    __tablename__ = "password_reset_codes"
+    __table_args__ = (
+        Index("ix_password_reset_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID_COL, primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(
+        UUID_COL, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    code_hash: Mapped[bytes] = mapped_column(LargeBinary(32))
+    expires_at: Mapped[datetime] = mapped_column()
+    attempts_remaining: Mapped[int] = mapped_column(SmallInteger, default=5)
+    consumed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
+
+
 class EmailVerificationCode(Base):
     """One-time code used to verify a user's email before their first export.
 

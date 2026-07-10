@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     EMAIL_VERIFY_RATE_PER_MIN: int = 1  # code-request throttle per user
     EMAIL_VERIFY_RATE_PER_HOUR: int = 5
 
+    # Password reset. Shorter TTL because the code implicitly authenticates the
+    # password change (anyone with the code can set a new password).
+    PASSWORD_RESET_TTL_MIN: int = 15
+    PASSWORD_RESET_MAX_ATTEMPTS: int = 5
+    PASSWORD_RESET_RATE_PER_MIN: int = 1
+    PASSWORD_RESET_RATE_PER_HOUR: int = 5
+
     # AI / transcription
     # "fake"   = FakeTranscriptionProvider (default; used by tests + offline dev)
     # "local"  = LocalWhisperProvider via faster-whisper (no API key, no cost)

@@ -79,3 +79,16 @@ async def send_verification_email(to: str, code: str) -> None:
         f"If you didn't request this, you can ignore this email."
     )
     await prov.send(to=to, subject=subject, body=body)
+
+
+async def send_password_reset_email(to: str, code: str) -> None:
+    """Send the password-reset 6-digit code."""
+    prov = get_email_provider()
+    subject = f"{settings.EMAIL_FROM_NAME}: your password reset code"
+    body = (
+        f"Your password reset code is: {code}\n\n"
+        f"It expires in {settings.PASSWORD_RESET_TTL_MIN} minutes. If you didn't "
+        f"request a password reset, you can ignore this email — your password "
+        f"has not changed."
+    )
+    await prov.send(to=to, subject=subject, body=body)

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -91,6 +92,47 @@ async def get_asset_for_user(
     asset = await db.get(Asset, asset_id)
     if asset is None or asset.user_id != user_id:
         return None
+    return asset
+
+
+async def list_user_originals(db: AsyncSession, user_id: str) -> list[Asset]:
+    """Return the user's non-deleted original uploads (Dashboard listing).
+
+    Derived assets (edit versions) are intentionally excluded — a project in
+    the UI corresponds to one upload; its edit history is walked from
+    parentAssetId when a project is opened.
+    """
+    res = await db.execute(
+        select(Asset)
+        .where(
+            Asset.user_id == user_id,
+            Asset.type == "original",
+            Asset.deleted_at.is_(None),
+        )
+        .order_by(Asset.created_at.desc())
+    )
+    return list(res.scalars().all())
+
+
+async def soft_delete_asset(
+    db: AsyncSession, asset_id: str, user_id: str
+) -> Asset | None:
+    """Mark an asset (and its descendants) deleted. Returns the deleted asset
+    or None if the caller doesn't own it / it doesn't exist.
+
+    Currently only deletes the row itself — descendant assets remain in the DB
+    but become unreachable through the Dashboard because the Dashboard queries
+    originals. Direct-URL access to a derived asset of a deleted project keeps
+    working, which is a compromise that avoids interrupting an in-progress
+    editor session on another tab.
+    """
+    asset = await db.get(Asset, asset_id)
+    if asset is None or asset.user_id != user_id:
+        return None
+    if asset.deleted_at is not None:
+        return asset  # idempotent
+    asset.deleted_at = datetime.utcnow()
+    await db.commit()
     return asset
 
 

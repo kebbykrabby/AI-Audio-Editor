@@ -11,14 +11,21 @@ from app.core.security import decode_state_token, encode_state_token
 from app.database import get_db
 from app.models.user import User
 from app.schemas.auth import (
+    ForgotPasswordRequest,
     LoginRequest,
     OAuthStartResponse,
     RegisterRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UserResponse,
     VerifyEmailRequest,
 )
-from app.services import auth_service, email_verification_service, oauth_service
+from app.services import (
+    auth_service,
+    email_verification_service,
+    oauth_service,
+    password_reset_service,
+)
 from app.services.auth_service import AuthError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -184,6 +191,30 @@ async def verify_email(
     except AuthError as e:
         raise _auth_error_http(e)
     return _user_to_response(user)
+
+
+# ----- Password reset (anonymous, code-based) -----
+
+@router.post("/password/forgot", status_code=204)
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    # Anti-enumeration: always 204 regardless of whether the email exists.
+    await password_reset_service.request_code(db, body.email)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/password/reset", status_code=204)
+async def reset_password(
+    body: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await password_reset_service.reset_password(db, body.email, body.code, body.password)
+    except AuthError as e:
+        raise _auth_error_http(e)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # ----- OAuth (Google & Apple) -----

@@ -40,3 +40,7 @@ class Asset(Base):
     updated_at: Mapped[datetime] = mapped_column(
         default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    # Soft-delete: filled when the user deletes a project from the Dashboard.
+    # `get_asset_for_user` intentionally does NOT filter on this so an in-progress
+    # editor session continues to work; list-assets and dashboard queries do.
+    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
