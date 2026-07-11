@@ -1,3 +1,5 @@
+import { Music } from "lucide-react";
+
 import AuthGate from "../auth/AuthGate";
 import UserMenu from "../auth/UserMenu";
 import { useEditorStore } from "../store/editorStore";
@@ -28,17 +30,21 @@ function Workspace() {
 
   if (isRestoring) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-slate-400 text-sm">Restoring session…</div>
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="text-muted-foreground text-sm">Restoring session…</div>
       </div>
     );
   }
 
+  // No asset yet — upload landing. Header carries the branded logo + account menu.
   if (!asset || asset.status !== "ready") {
     return (
-      <div className="min-h-screen flex flex-col">
-        <header className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
-          <div className="text-slate-200 font-medium">AI Audio Editor</div>
+      <div className="min-h-screen flex flex-col bg-background">
+        <header className="h-12 border-b border-border bg-card flex items-center px-4 gap-3 shrink-0">
+          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
+            <Music className="w-3.5 h-3.5 text-primary-foreground" />
+          </div>
+          <h1 className="text-sm font-medium text-foreground flex-1">AI Audio Editor</h1>
           <UserMenu />
         </header>
         <UploadZone />
@@ -46,32 +52,53 @@ function Workspace() {
     );
   }
 
+  // Editor. Steps 5-7 will move panels into a right sidebar with tabs; for now
+  // the layout is single-column so each subsequent step can restyle one panel
+  // in place without also redoing the overall topology.
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
-        <Toolbar />
+    <div className="min-h-screen flex flex-col bg-background">
+      <header className="h-12 border-b border-border bg-card flex items-center px-4 gap-3 shrink-0">
+        <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center shrink-0">
+          <Music className="w-3.5 h-3.5 text-primary-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <Toolbar />
+        </div>
         <UserMenu />
       </header>
 
+      {/* Processing overlay — full-screen dim while an operation runs. */}
+      {isProcessing && (
+        <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-lg text-sm text-foreground pointer-events-auto">
+            Processing…
+          </div>
+        </div>
+      )}
+
       {error && (
-        <div className="px-4 py-2 bg-red-900/50 border-b border-red-800 text-red-300 text-sm flex justify-between">
+        <div
+          className="px-4 py-2 border-b border-destructive/30 bg-destructive/10 text-destructive text-sm flex justify-between items-center"
+          role="alert"
+        >
           <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-200">
+          <button
+            onClick={() => setError(null)}
+            className="text-destructive/70 hover:text-destructive text-xs uppercase tracking-wide"
+          >
             dismiss
           </button>
         </div>
       )}
       {warning && (
-        <div className="px-4 py-2 bg-yellow-900/50 border-b border-yellow-800 text-yellow-300 text-sm flex justify-between">
+        <div className="px-4 py-2 border-b bg-yellow-100 text-yellow-900 border-yellow-300 text-sm flex justify-between items-center">
           <span>{warning}</span>
-          <button onClick={() => setWarning(null)} className="text-yellow-400 hover:text-yellow-200">
+          <button
+            onClick={() => setWarning(null)}
+            className="text-yellow-700 hover:text-yellow-900 text-xs uppercase tracking-wide"
+          >
             dismiss
           </button>
-        </div>
-      )}
-      {isProcessing && (
-        <div className="px-4 py-2 bg-blue-900/50 border-b border-blue-800 text-blue-300 text-sm">
-          Processing operation…
         </div>
       )}
 

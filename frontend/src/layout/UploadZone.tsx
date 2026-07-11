@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, type DragEvent } from "react";
+import { Loader2, UploadCloud } from "lucide-react";
 import { uploadAudio, pollUntilReady } from "../api/assets";
 import { ApiRequestError } from "../api/client";
 import { useEditorStore } from "../store/editorStore";
@@ -80,37 +81,46 @@ export default function UploadZone() {
   );
 
   return (
-    <div className="flex items-center justify-center min-h-screen p-8">
-      <div
+    <div className="flex items-center justify-center flex-1 p-8">
+      <label
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
         className={`
-          w-full max-w-2xl p-16 rounded-2xl border-2 border-dashed text-center transition-colors cursor-pointer
-          ${dragOver ? "border-blue-400 bg-blue-950/30" : "border-slate-600 bg-slate-800/50 hover:border-slate-500"}
+          w-full max-w-2xl p-16 rounded-2xl border-2 border-dashed text-center transition-colors cursor-pointer flex flex-col items-center gap-3
+          ${dragOver
+            ? "border-primary bg-primary/5"
+            : "border-border bg-card hover:border-primary/50 hover:bg-accent/40"
+          }
         `}
       >
         {isUploading ? (
-          <div>
-            <div className="text-xl text-slate-300 mb-2">Processing...</div>
-            <div className="text-sm text-slate-500">Extracting metadata and generating waveform</div>
-          </div>
+          <>
+            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+            <div className="text-lg font-medium text-foreground">Processing…</div>
+            <div className="text-sm text-muted-foreground">
+              Extracting metadata and generating waveform
+            </div>
+          </>
         ) : (
-          <label className="cursor-pointer">
-            <div className="text-xl text-slate-300 mb-2">Drop audio file here</div>
-            <div className="text-sm text-slate-500 mb-4">or click to browse (WAV, MP3 up to 100MB)</div>
+          <>
+            <UploadCloud className="w-10 h-10 text-muted-foreground" strokeWidth={1.5} />
+            <div className="text-lg font-medium text-foreground">Drop audio file here</div>
+            <div className="text-sm text-muted-foreground">
+              or click to browse — WAV or MP3, up to 100 MB
+            </div>
             <input
               type="file"
               accept=".wav,.mp3,audio/wav,audio/mpeg"
               onChange={onFileSelect}
               className="hidden"
             />
-          </label>
+          </>
         )}
         {error && (
-          <div className="mt-4 text-red-400 text-sm">{error}</div>
+          <div className="mt-2 text-destructive text-sm">{error}</div>
         )}
-      </div>
+      </label>
     </div>
   );
 }

@@ -39,44 +39,41 @@ export default function Toolbar() {
   if (!asset) return null;
 
   return (
-    <div className="flex items-center justify-between px-4 py-3 bg-slate-800 border-b border-slate-700">
-      <div className="flex items-center gap-3">
-        <button
-          onClick={reset}
-          disabled={!!channelEdit}
-          className="toolbar-btn"
-          title="Upload a new file"
-        >
-          New File
-        </button>
-        <div className="w-px h-6 bg-slate-600 mx-1" />
-        <span className="text-sm font-medium text-slate-300 truncate max-w-xs">
-          {channelEdit
-            ? `Channel Edit: ${channelEdit.activeChannel === "left" ? "Left" : "Right"}`
-            : `${asset.sampleRate}Hz / ${asset.channels === 2 ? "Stereo" : "Mono"}${asset.durationSec ? ` / ${asset.durationSec.toFixed(1)}s` : ""}`
-          }
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={undo}
-          disabled={!canUndo || !!channelEdit}
-          className="toolbar-btn"
-          title="Undo (Ctrl+Z)"
-        >
-          Undo
-        </button>
-        <button
-          onClick={redo}
-          disabled={!canRedo || !!channelEdit}
-          className="toolbar-btn"
-          title="Redo (Ctrl+Shift+Z)"
-        >
-          Redo
-        </button>
-        <div className="w-px h-6 bg-slate-600 mx-1" />
-        <ExportPopover />
-      </div>
+    <div className="flex items-center gap-2 min-w-0">
+      <button
+        onClick={reset}
+        disabled={!!channelEdit}
+        className="toolbar-btn"
+        title="Upload a new file"
+      >
+        New File
+      </button>
+      <div className="w-px h-5 bg-border mx-1" />
+      <span className="text-xs font-medium text-muted-foreground truncate">
+        {channelEdit
+          ? `Channel Edit: ${channelEdit.activeChannel === "left" ? "Left" : "Right"}`
+          : `${asset.sampleRate}Hz · ${asset.channels === 2 ? "Stereo" : "Mono"}${asset.durationSec ? ` · ${asset.durationSec.toFixed(1)}s` : ""}`
+        }
+      </span>
+      <div className="flex-1" />
+      <button
+        onClick={undo}
+        disabled={!canUndo || !!channelEdit}
+        className="toolbar-btn"
+        title="Undo (Ctrl+Z)"
+      >
+        Undo
+      </button>
+      <button
+        onClick={redo}
+        disabled={!canRedo || !!channelEdit}
+        className="toolbar-btn"
+        title="Redo (Ctrl+Shift+Z)"
+      >
+        Redo
+      </button>
+      <div className="w-px h-5 bg-border mx-1" />
+      <ExportPopover />
     </div>
   );
 }

@@ -27,12 +27,12 @@ export default function UserMenu() {
 
   return (
     <div className="flex items-center gap-2 text-sm">
-      <span className="text-slate-400 truncate max-w-[200px]">{label}</span>
+      <span className="text-muted-foreground truncate max-w-[200px]">{label}</span>
       <button
         type="button"
         onClick={onLogout}
         disabled={busy}
-        className="px-2 py-1 rounded border border-slate-700 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+        className="px-2 py-1 rounded border border-border text-foreground hover:bg-muted disabled:opacity-50"
       >
         {busy ? "…" : "Sign out"}
       </button>

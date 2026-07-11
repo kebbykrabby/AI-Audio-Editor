@@ -1,8 +1,23 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
+import { Pause, Play } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { formatTime } from "@/lib/time";
 import { useEditorStore } from "../store/editorStore";
 import { useAssetUrlRefresh } from "./useAssetUrlRefresh";
+
+/**
+ * Read a `--foo` HSL-parts variable (e.g. "250 65% 55%") from :root and
+ * wrap it in `hsl(...)` for WaveSurfer, which needs a full color string.
+ * `fallback` is used if the variable isn't set (e.g. during SSR or tests).
+ */
+function readThemeColor(varName: string, fallback: string, alpha?: number): string {
+  if (typeof window === "undefined") return fallback;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  if (!raw) return fallback;
+  return alpha != null ? `hsl(${raw} / ${alpha})` : `hsl(${raw})`;
+}
 
 const FILLER_REGION_ID_PREFIX = "filler-";
 const PROFANITY_REGION_ID_PREFIX = "profanity-";
@@ -82,12 +97,19 @@ export default function WaveformPlayer() {
     const regions = RegionsPlugin.create();
     regionsRef.current = regions;
 
+    // Read theme colors from CSS vars so re-tinting the app doesn't need a
+    // rebuild of the waveform. Alpha lets the progress bar sit visually on top
+    // of the wave (same hue, higher saturation) without a second variable.
+    const waveColor = readThemeColor("--primary", "#4f83cc", 0.45);
+    const progressColor = readThemeColor("--primary", "#1d4ed8");
+    const cursorColor = readThemeColor("--foreground", "#f59e0b", 0.75);
+
     const ws = WaveSurfer.create({
       container: containerRef.current,
       height: 180,
-      waveColor: "#4f83cc",
-      progressColor: "#1d4ed8",
-      cursorColor: "#f59e0b",
+      waveColor,
+      progressColor,
+      cursorColor,
       cursorWidth: 2,
       barWidth: 2,
       barGap: 1,
@@ -125,8 +147,10 @@ export default function WaveformPlayer() {
       });
     });
 
-    // Region selection
-    regions.enableDragSelection({ color: "rgba(59, 130, 246, 0.3)" });
+    // Region selection — use the theme's primary hue so the drag-to-select
+    // overlay matches the waveform without an extra token.
+    const selectionColor = readThemeColor("--primary", "rgba(59,130,246,0.3)", 0.25);
+    regions.enableDragSelection({ color: selectionColor });
     const isAiOverlay = (id: string) =>
       id.startsWith(FILLER_REGION_ID_PREFIX) ||
       id.startsWith(PROFANITY_REGION_ID_PREFIX) ||
@@ -312,7 +336,7 @@ export default function WaveformPlayer() {
       regionRef.current = regionsRef.current.addRegion({
         start: selection.startSec,
         end: selection.endSec,
-        color: "rgba(59, 130, 246, 0.3)",
+        color: readThemeColor("--primary", "rgba(59,130,246,0.3)", 0.25),
         drag: true,
         resize: true,
       });
@@ -325,34 +349,26 @@ export default function WaveformPlayer() {
 
   return (
     <div>
-      <div className="relative">
+      <div className="relative rounded-xl border border-border bg-card overflow-hidden">
         <div
           ref={containerRef}
-          className="w-full rounded-lg bg-slate-900 border border-slate-700 cursor-crosshair"
+          className="waveform-canvas w-full"
         />
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80 rounded-lg">
-            <span className="text-sm text-slate-400">Loading waveform...</span>
+          <div className="absolute inset-0 flex items-center justify-center bg-card/80 backdrop-blur-sm">
+            <span className="text-sm text-muted-foreground">Loading waveform…</span>
           </div>
         )}
       </div>
-      <div className="flex items-center gap-4 mt-3">
-        <button
-          onClick={togglePlay}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white text-sm font-medium"
-        >
+      <div className="flex items-center gap-3 mt-3">
+        <Button onClick={togglePlay} size="sm" className="gap-1.5">
+          {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
           {isPlaying ? "Pause" : "Play"}
-        </button>
-        <span className="text-sm text-slate-400 font-mono">
+        </Button>
+        <span className="text-sm text-muted-foreground font-mono">
           {formatTime(currentTimeSec)} / {formatTime(asset?.durationSec ?? 0)}
         </span>
       </div>
     </div>
   );
-}
-
-function formatTime(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
 }
