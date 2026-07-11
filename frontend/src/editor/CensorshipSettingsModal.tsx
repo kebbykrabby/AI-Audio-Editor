@@ -1,4 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import {
   getCensorshipWords,
   updateCensorshipWords,
@@ -15,11 +29,11 @@ interface Props {
  * Censorship word-list editor (Phase 3 / D6).
  *
  * Two surfaces: a textarea for the user's custom words (added), and a
- * scrollable list of the built-in words with per-row checkboxes that toggle
- * inclusion (unchecked = added to the user's `removed` list).
+ * scrollable grid of the built-in words with per-row checkboxes (unchecked
+ * = added to the user's `removed` list).
  *
- * The modal loads fresh on every open so a stale tab can't overwrite later
- * edits from another device.
+ * Reloads on every open so a stale tab can't clobber later edits from
+ * another device.
  */
 export default function CensorshipSettingsModal({ open, onClose }: Props) {
   const [state, setState] = useState<CensorshipWordsState | null>(null);
@@ -55,8 +69,6 @@ export default function CensorshipSettingsModal({ open, onClose }: Props) {
     [state],
   );
 
-  if (!open) return null;
-
   const handleSave = async () => {
     setSaving(true);
     setError(null);
@@ -74,9 +86,7 @@ export default function CensorshipSettingsModal({ open, onClose }: Props) {
       setState(next);
       onClose();
     } catch (e) {
-      setError(
-        e instanceof Error ? e.message : "Failed to save changes",
-      );
+      setError(e instanceof Error ? e.message : "Failed to save changes");
     } finally {
       setSaving(false);
     }
@@ -92,152 +102,129 @@ export default function CensorshipSettingsModal({ open, onClose }: Props) {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => {
-        // Click outside the panel closes the modal.
-        if (e.target === e.currentTarget && !saving) onClose();
-      }}
-    >
-      <div className="bg-slate-900 border border-slate-700 rounded-lg w-full max-w-2xl max-h-[80vh] flex flex-col">
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-200">
-            Censorship word list
-          </h3>
-          <button
-            onClick={onClose}
-            disabled={saving}
-            className="text-slate-400 hover:text-slate-100 text-lg leading-none"
-            aria-label="Close"
-            title="Close"
-          >
-            ×
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(v) => !v && !saving && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Censorship word list</DialogTitle>
+          <DialogDescription>
+            Manage your custom words and toggle which built-in words the detector uses.
+          </DialogDescription>
+        </DialogHeader>
 
         {loading ? (
-          <div className="p-6 text-sm text-slate-400">Loading…</div>
+          <div className="py-6 text-sm text-muted-foreground">Loading…</div>
         ) : (
-          <div className="overflow-y-auto p-4 space-y-4">
-            <section>
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">
+          <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-1">
+            <section className="space-y-2">
+              <Label className="text-xs uppercase tracking-wide">
                 Custom words to censor
-              </h4>
-              <p className="text-xs text-slate-500 mb-2">
-                One word per line. Lowercase + punctuation are normalized. These
-                words are always censored, on top of any built-in words you keep
-                enabled.
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                One word per line. Lowercase + punctuation are normalized. These words
+                are always censored, on top of any built-in words you keep enabled.
               </p>
-              <textarea
+              <Textarea
                 value={addedText}
                 onChange={(e) => setAddedText(e.target.value)}
                 disabled={saving}
-                className="w-full h-32 bg-slate-800 border border-slate-700 rounded p-2 text-sm text-slate-200 font-mono"
-                placeholder="banana&#10;custom-slur&#10;..."
+                className="h-32 font-mono text-sm"
+                placeholder={"banana\ncustom-slur\n..."}
               />
             </section>
 
-            <section>
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">
-                Built-in words
-              </h4>
-              <p className="text-xs text-slate-500 mb-2">
+            <section className="space-y-2">
+              <Label className="text-xs uppercase tracking-wide">Built-in words</Label>
+              <p className="text-xs text-muted-foreground">
                 Uncheck a word to stop censoring it. Re-check to restore it.
               </p>
-              <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 text-xs">
-                {sortedBuiltIn.map((w) => {
-                  const enabled = !removedSet.has(w);
-                  return (
-                    <li key={w} className="flex items-center gap-1.5">
-                      <input
-                        id={`builtin-${w}`}
-                        type="checkbox"
-                        checked={enabled}
-                        onChange={() => toggleBuiltIn(w)}
-                        disabled={saving}
-                      />
-                      <label
-                        htmlFor={`builtin-${w}`}
-                        className={`font-mono ${
-                          enabled ? "text-slate-300" : "text-slate-500 line-through"
-                        }`}
-                      >
-                        {w}
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
+              <ScrollArea className="max-h-56 rounded-md border border-border p-2">
+                <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 text-xs">
+                  {sortedBuiltIn.map((w) => {
+                    const enabled = !removedSet.has(w);
+                    return (
+                      <li key={w} className="flex items-center gap-1.5">
+                        <Checkbox
+                          id={`builtin-${w}`}
+                          checked={enabled}
+                          onCheckedChange={() => toggleBuiltIn(w)}
+                          disabled={saving}
+                        />
+                        <label
+                          htmlFor={`builtin-${w}`}
+                          className={`font-mono cursor-pointer ${
+                            enabled ? "text-foreground" : "text-muted-foreground line-through"
+                          }`}
+                        >
+                          {w}
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </ScrollArea>
             </section>
 
-            <section>
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-400 mb-1">
-                Matchers
-              </h4>
-              <p className="text-xs text-slate-500 mb-2">
+            <section className="space-y-2">
+              <Label className="text-xs uppercase tracking-wide">Matchers</Label>
+              <p className="text-xs text-muted-foreground">
                 Exact matching is always on. Variants catches inflected forms
-                (running, ran, runs). Phonetic catches sound-alike
-                mistranscriptions — applied only to your custom words to avoid
-                false positives like "duck" sounding like a built-in word.
+                (running, ran, runs). Phonetic catches sound-alike mistranscriptions
+                — applied only to your custom words to avoid built-in false
+                positives.
               </p>
-              <div className="flex flex-col gap-1.5 text-xs">
-                <label className="flex items-center gap-2 text-slate-500">
-                  <input type="checkbox" checked disabled />
+              <div className="flex flex-col gap-2 text-sm">
+                <label className="flex items-center gap-2 text-muted-foreground">
+                  <Checkbox checked disabled />
                   <span>Exact (always on)</span>
                 </label>
-                <label className="flex items-center gap-2 text-slate-200">
-                  <input
-                    type="checkbox"
+                <label className="flex items-center gap-2">
+                  <Checkbox
                     checked={matchers.variants}
-                    onChange={(e) =>
-                      setMatchers((m) => ({ ...m, variants: e.target.checked }))
+                    onCheckedChange={(v) =>
+                      setMatchers((m) => ({ ...m, variants: v === true }))
                     }
                     disabled={saving}
                   />
                   <span>
-                    Variants <span className="text-slate-500">(stems + plurals)</span>
+                    Variants{" "}
+                    <span className="text-muted-foreground">(stems + plurals)</span>
                   </span>
                 </label>
-                <label className="flex items-center gap-2 text-slate-200">
-                  <input
-                    type="checkbox"
+                <label className="flex items-center gap-2">
+                  <Checkbox
                     checked={matchers.phonetic}
-                    onChange={(e) =>
-                      setMatchers((m) => ({ ...m, phonetic: e.target.checked }))
+                    onCheckedChange={(v) =>
+                      setMatchers((m) => ({ ...m, phonetic: v === true }))
                     }
                     disabled={saving}
                   />
                   <span>
                     Phonetic{" "}
-                    <span className="text-slate-500">(your custom words only)</span>
+                    <span className="text-muted-foreground">
+                      (your custom words only)
+                    </span>
                   </span>
                 </label>
               </div>
             </section>
 
             {error && (
-              <p className="text-xs text-red-400 bg-red-950 border border-red-900 rounded p-2">
+              <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded-md p-2">
                 {error}
               </p>
             )}
           </div>
         )}
 
-        <div className="p-4 border-t border-slate-800 flex justify-end gap-2">
-          <button onClick={onClose} disabled={saving} className="op-btn">
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || loading}
-            className="op-btn"
-          >
+          </Button>
+          <Button onClick={handleSave} disabled={saving || loading}>
             {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </div>
-    </div>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

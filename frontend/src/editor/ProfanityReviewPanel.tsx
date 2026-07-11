@@ -1,4 +1,20 @@
 import { useMemo, useRef, useState } from "react";
+import { Play, ShieldAlert } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { formatTime } from "@/lib/time";
 import { ApiRequestError } from "../api/client";
 import { enqueueOperation, pollOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
@@ -20,19 +36,14 @@ const MODE_DESCRIPTIONS: Record<CensorMode, string> = {
 };
 
 /**
- * Review panel for AI-detected profanity regions. Sibling of FillerReviewPanel
- * by deliberate copy-paste: the two features will diverge in the UI (mode
- * selector here, but not in fillers) and the design doc explicitly says to
- * resist premature abstraction until a 3rd AI feature lands.
+ * Review panel for AI-detected profanity regions.
  *
- * Key differences from FillerReviewPanel:
- * - Action applies `censor_segments` (duration-preserving) instead of
- *   `remove_segments` (duration-shortening).
- * - Confidence slider is hidden in Phase 1 (D4): exact match = 1.0 always,
- *   slider is meaningless until phonetic matching ships in Phase 4.
- * - Mode selector for censor mode (Phase 1: beep only; Phase 2 widens).
- * - Region rows show `matchedBy` tag so the user can see how each match was
- *   caught (helpful once variants/phonetic matchers exist).
+ * Sibling of FillerReviewPanel by deliberate copy-paste; the two panels
+ * will diverge (mode selector here, but not in fillers) and the design doc
+ * says to resist premature abstraction until a 3rd AI feature ships.
+ *
+ * On commit, enqueues `censor_segments` with the accepted intervals + chosen
+ * mode; only `cut` mode changes duration.
  */
 export default function ProfanityReviewPanel() {
   const asset = useEditorStore((s) => s.currentAsset());
@@ -64,9 +75,6 @@ export default function ProfanityReviewPanel() {
 
   const regions = review.result.regions;
   const total = regions.length;
-  // D4: show the confidence floor slider only when the detection produced any
-  // non-exact match. Exact-only results have confidence=1.0 across the board
-  // so the slider would do nothing.
   const hasNonExactMatches = regions.some((r) => r.matchedBy !== "exact");
 
   const handleCommit = async () => {
@@ -80,16 +88,11 @@ export default function ProfanityReviewPanel() {
     setError(null);
 
     try {
-      const enqueued = await enqueueOperation(
-        "censor_segments",
-        review.inputAssetId,
-        {
-          intervals: accepted.map((r) => ({ start: r.start, end: r.end })),
-          mode: review.mode,
-          // beep_hz is only meaningful for mode=beep; always send it, server ignores otherwise.
-          beep_hz: review.beepHz,
-        },
-      );
+      const enqueued = await enqueueOperation("censor_segments", review.inputAssetId, {
+        intervals: accepted.map((r) => ({ start: r.start, end: r.end })),
+        mode: review.mode,
+        beep_hz: review.beepHz,
+      });
       setPendingOperation({
         operationId: enqueued.operationId,
         type: "censor_segments",
@@ -100,16 +103,13 @@ export default function ProfanityReviewPanel() {
         signal: controller.signal,
       });
       if (completed.asset) {
-        // Only cut mode changes audio duration; the others replace in place.
         const durationChanged = review.mode === "cut";
         pushAsset(completed.asset, durationChanged);
       }
       exitReview();
     } catch (e) {
       if (e instanceof ApiRequestError && e.code === "ABORTED") return;
-      setError(
-        e instanceof Error ? e.message : "Failed to censor selected regions",
-      );
+      setError(e instanceof Error ? e.message : "Failed to censor selected regions");
     } finally {
       setCommitting(false);
       setPendingOperation(null);
@@ -118,60 +118,71 @@ export default function ProfanityReviewPanel() {
   };
 
   return (
-    <div className="border border-slate-700 rounded bg-slate-900 p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-200">
+    <div className="rounded-lg border border-border bg-card p-4 space-y-4 shadow-sm">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+            <ShieldAlert className="w-3.5 h-3.5 text-primary" />
             Review profanity
           </h3>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted-foreground mt-0.5">
             {accepted.length} of {total} selected
-            {review.result.modelVersion && (
-              <> · model: {review.result.modelVersion}</>
-            )}
+            {review.result.modelVersion && <> · model: {review.result.modelVersion}</>}
           </p>
         </div>
-        <div className="flex gap-2">
-          <button
+        <div className="flex gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
             onClick={exitReview}
             disabled={committing}
-            className="op-btn"
             title="Discard detection and return to the editor"
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
             onClick={handleCommit}
             disabled={committing || isProcessing || accepted.length === 0}
-            className="op-btn"
             title="Censor all currently-selected regions"
           >
             {committing
               ? "Censoring…"
               : `Censor ${accepted.length} word${accepted.length === 1 ? "" : "s"}`}
-          </button>
+          </Button>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-        <label htmlFor="censor-mode" className="text-slate-400">Mode</label>
-        <select
-          id="censor-mode"
-          value={review.mode}
-          onChange={(e) => setMode(e.target.value as CensorMode)}
-          disabled={committing}
-          className="bg-slate-800 border border-slate-700 px-2 py-1 text-slate-200 rounded"
-        >
-          {(Object.keys(MODE_LABELS) as CensorMode[]).map((m) => (
-            <option key={m} value={m}>
-              {MODE_LABELS[m]}
-            </option>
-          ))}
-        </select>
+      {/* Mode selector */}
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] items-end">
+        <div>
+          <Label htmlFor="censor-mode" className="text-xs">
+            Mode
+          </Label>
+          <Select
+            value={review.mode}
+            onValueChange={(v) => setMode(v as CensorMode)}
+            disabled={committing}
+          >
+            <SelectTrigger className="mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(MODE_LABELS) as CensorMode[]).map((m) => (
+                <SelectItem key={m} value={m}>
+                  {MODE_LABELS[m]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         {review.mode === "beep" && (
-          <>
-            <label htmlFor="beep-hz" className="text-slate-400">Frequency</label>
-            <input
+          <div>
+            <Label htmlFor="beep-hz" className="text-xs">
+              Frequency (Hz)
+            </Label>
+            <Input
               id="beep-hz"
               type="number"
               min={200}
@@ -179,94 +190,86 @@ export default function ProfanityReviewPanel() {
               step={100}
               value={review.beepHz}
               onChange={(e) => setBeepHz(Number(e.target.value))}
-              className="w-20 bg-slate-800 border border-slate-700 px-1 text-slate-200 rounded"
               disabled={committing}
+              className="mt-1 w-28"
             />
-            <span>Hz</span>
-          </>
+          </div>
         )}
-        <p className="text-xs text-slate-500 w-full italic">
-          {MODE_DESCRIPTIONS[review.mode]}
-        </p>
       </div>
+      <p className="text-xs text-muted-foreground italic -mt-2">
+        {MODE_DESCRIPTIONS[review.mode]}
+      </p>
 
+      {/* Confidence slider — hidden when every match was exact */}
       {hasNonExactMatches && (
         <div className="flex items-center gap-3">
-          <label className="text-xs text-slate-500" htmlFor="profanity-confidence">
+          <label className="text-xs text-muted-foreground w-24 shrink-0">
             Confidence floor
           </label>
-          <input
-            id="profanity-confidence"
-            type="range"
+          <Slider
             min={0}
             max={1}
             step={0.05}
-            value={review.confidenceThreshold}
-            onChange={(e) => setThreshold(Number(e.target.value))}
-            className="w-56"
+            value={[review.confidenceThreshold]}
+            onValueChange={([v]) => setThreshold(v)}
             disabled={committing}
+            className="max-w-xs"
           />
-          <span className="text-xs text-slate-300 w-10">
+          <span className="text-xs font-mono text-foreground w-10 text-right">
             {review.confidenceThreshold.toFixed(2)}
           </span>
         </div>
       )}
 
+      {/* Region list */}
       {total === 0 ? (
-        <p className="text-sm text-slate-400">
-          No profanity detected in this audio.
-        </p>
+        <p className="text-sm text-muted-foreground">No profanity detected in this audio.</p>
       ) : (
-        <ul className="max-h-96 overflow-y-auto divide-y divide-slate-800 border border-slate-800 rounded">
-          {regions.map((r) => {
-            const rejected = review.rejectedWordIndices.has(r.wordIndex);
-            const belowFloor = r.confidence < review.confidenceThreshold;
-            const isAccepted = !belowFloor && !rejected;
-            return (
-              <li
-                key={r.wordIndex}
-                className={`flex items-center gap-2 px-2 py-1.5 text-sm ${
-                  isAccepted ? "bg-slate-900" : "bg-slate-900/40 text-slate-500"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => playRange(r.start, r.end)}
-                  disabled={committing}
-                  className="px-1.5 text-slate-400 hover:text-slate-100 disabled:opacity-40"
-                  aria-label={`Preview region at ${r.start.toFixed(2)}s`}
-                  title="Preview this segment"
+        <ScrollArea className="max-h-96 rounded-md border border-border">
+          <ul className="divide-y divide-border">
+            {regions.map((r) => {
+              const rejected = review.rejectedWordIndices.has(r.wordIndex);
+              const belowFloor = r.confidence < review.confidenceThreshold;
+              const isAccepted = !belowFloor && !rejected;
+              return (
+                <li
+                  key={r.wordIndex}
+                  className={`flex items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
+                    isAccepted ? "bg-background" : "bg-muted/40 text-muted-foreground"
+                  }`}
                 >
-                  ▶
-                </button>
-                <input
-                  type="checkbox"
-                  checked={isAccepted}
-                  disabled={committing || belowFloor}
-                  onChange={() => toggleReject(r.wordIndex)}
-                  aria-label={`Toggle region at ${r.start.toFixed(2)}s`}
-                />
-                <span className="font-mono text-xs text-slate-400 w-24 tabular-nums">
-                  {formatTime(r.start)}–{formatTime(r.end)}
-                </span>
-                <span className="flex-1 truncate">{r.text}</span>
-                <span className="text-xs uppercase tracking-wide text-slate-500 w-20">
-                  {r.matchedBy}
-                </span>
-                <span className="text-xs text-slate-400 w-12 text-right">
-                  {(r.confidence * 100).toFixed(0)}%
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+                  <button
+                    type="button"
+                    onClick={() => playRange(r.start, r.end)}
+                    disabled={committing}
+                    className="flex items-center justify-center w-6 h-6 rounded hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-40"
+                    aria-label={`Preview region at ${r.start.toFixed(2)}s`}
+                    title="Preview this segment"
+                  >
+                    <Play className="w-3 h-3" />
+                  </button>
+                  <Checkbox
+                    checked={isAccepted}
+                    disabled={committing || belowFloor}
+                    onCheckedChange={() => toggleReject(r.wordIndex)}
+                    aria-label={`Toggle region at ${r.start.toFixed(2)}s`}
+                  />
+                  <span className="font-mono text-xs text-muted-foreground w-28 tabular-nums">
+                    {formatTime(r.start)}–{formatTime(r.end)}
+                  </span>
+                  <span className="flex-1 truncate">{r.text}</span>
+                  <span className="text-xs uppercase tracking-wide text-muted-foreground w-20">
+                    {r.matchedBy}
+                  </span>
+                  <span className="text-xs font-mono text-muted-foreground w-12 text-right">
+                    {(r.confidence * 100).toFixed(0)}%
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </ScrollArea>
       )}
     </div>
   );
-}
-
-function formatTime(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = sec - m * 60;
-  return `${m}:${s.toFixed(2).padStart(5, "0")}`;
 }

@@ -1,4 +1,11 @@
 import { useMemo, useRef, useState } from "react";
+import { AlertTriangle, MessageSquare, Play } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
 import { ApiRequestError } from "../api/client";
 import { generateNlePlan } from "../api/nle";
 import { enqueueOperation, pollOperation } from "../api/operations";
@@ -8,31 +15,25 @@ import type { NlePlanStep } from "../store/types";
 /**
  * Review panel for an LLM-generated plan of operations.
  *
- * Two modes:
- * - **Plan mode** — the LLM returned one or more tool calls. Each step is
- *   listed with a checkbox (include/exclude), description, and validation
- *   badge. Invalid steps cannot be applied. Apply dispatches enabled valid
- *   steps sequentially, each one consuming the asset produced by the
- *   previous step.
- * - **Ambiguity mode** — the LLM returned zero tool calls + a clarifying
- *   message in `finalResponse`. We show the message and offer Cancel only.
- *   The user re-prompts via the OperationPanel input on the next round.
+ * Two modes, driven by whether the LLM returned any steps:
+ *
+ * - **Plan mode** — one or more tool calls came back. Each step is listed
+ *   with an include/exclude checkbox, description, validation badge, and (if
+ *   the step has a time range) a preview button. Invalid steps cannot be
+ *   applied. Apply dispatches enabled valid steps sequentially, each one
+ *   consuming the asset produced by the previous step.
+ * - **Ambiguity mode** — zero tool calls + a clarifying message in
+ *   `finalResponse`. We show the message and offer a refine textarea. Each
+ *   refine call is independent — no chat history is sent (D4 in the design
+ *   doc).
  */
 
-// Operation types that change the audio duration. Used to drive history's
-// `durationChanged` flag — selection is cleared on those, preserved on others.
-const DURATION_CHANGING_OPS = new Set([
-  "trim", "delete", "remove_silence", "speed",
-]);
+const DURATION_CHANGING_OPS = new Set(["trim", "delete", "remove_silence", "speed"]);
 
-// Operation types where a timestamp range is meaningful to preview. Maps a
-// step's params → (start, end) tuple, or null if no preview makes sense
-// (e.g. reverse, normalize — they touch the whole asset).
 function previewRange(step: NlePlanStep): [number, number] | null {
   const p = step.operation.parameters as Record<string, unknown>;
   const t = step.operation.type;
-  const num = (k: string) =>
-    typeof p[k] === "number" ? (p[k] as number) : null;
+  const num = (k: string) => (typeof p[k] === "number" ? (p[k] as number) : null);
 
   if (t === "trim" || t === "delete" || t === "reverse_range" || t === "gain_range") {
     const s = num("start_sec");
@@ -43,8 +44,6 @@ function previewRange(step: NlePlanStep): [number, number] | null {
     const d = num("duration_sec");
     return d !== null && d > 0 ? [0, d] : null;
   }
-  // fade_out previews need the asset's duration to anchor against; we let the
-  // caller (which has the asset on hand) build that one separately.
   return null;
 }
 
@@ -67,13 +66,11 @@ export default function NlePlanReviewPanel() {
   const [refining, setRefining] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  // Enabled valid steps in transcript order. Invalid steps never apply.
   const enabledSteps = useMemo<NlePlanStep[]>(() => {
     if (!review) return [];
     return review.result.steps.filter(
       (s) =>
-        s.validationStatus === "valid" &&
-        !review.excludedStepIndices.has(s.stepIndex),
+        s.validationStatus === "valid" && !review.excludedStepIndices.has(s.stepIndex),
     );
   }, [review]);
 
@@ -123,9 +120,6 @@ export default function NlePlanReviewPanel() {
       exitReview();
     } catch (e) {
       if (e instanceof ApiRequestError && e.code === "ABORTED") return;
-      // We keep the partial progress in history. The user can undo individual
-      // steps from there — we never auto-rollback (would be more surprising
-      // than helpful per the design doc §8).
       setError(
         e instanceof Error
           ? `Plan apply stopped: ${e.message}`
@@ -141,17 +135,12 @@ export default function NlePlanReviewPanel() {
 
   const handleCancel = () => {
     if (applying) {
-      // Abort the in-flight poll. We do NOT undo completed steps.
       abortRef.current?.abort();
       return;
     }
     exitReview();
   };
 
-  // Submits a refined prompt to the LLM and swaps the current ambiguity
-  // panel for whatever it returns. Each call is independent (no chat
-  // history is sent — D4 in the design doc); the user iterates by
-  // re-prompting with more specificity.
   const handleRefine = async () => {
     if (!asset || refining) return;
     const trimmed = refinePrompt.trim();
@@ -159,7 +148,7 @@ export default function NlePlanReviewPanel() {
     setRefining(true);
     setError(null);
     try {
-      const { operationId, result } = await generateNlePlan(asset.assetId, {
+      const { operationId, result: newResult } = await generateNlePlan(asset.assetId, {
         prompt: trimmed,
         selection: selection
           ? { startSec: selection.startSec, endSec: selection.endSec }
@@ -168,17 +157,13 @@ export default function NlePlanReviewPanel() {
       enterReview({
         operationId,
         inputAssetId: asset.assetId,
-        result,
+        result: newResult,
         excludedStepIndices: new Set(),
         applyProgress: null,
       });
       setRefinePrompt("");
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Re-plan failed; try again or cancel.",
-      );
+      setError(e instanceof Error ? e.message : "Re-plan failed; try again or cancel.");
     } finally {
       setRefining(false);
     }
@@ -187,37 +172,38 @@ export default function NlePlanReviewPanel() {
   // --- Ambiguity mode -------------------------------------------------------
   if (isAmbiguity) {
     return (
-      <div className="border border-slate-700 rounded bg-slate-900 p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-200">
+      <div className="rounded-lg border border-border bg-card p-4 space-y-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+              <MessageSquare className="w-3.5 h-3.5 text-primary" />
               Plan needs clarification
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">
               You asked: <span className="italic">{result.prompt}</span>
             </p>
           </div>
-          <button onClick={exitReview} disabled={refining} className="op-btn">
+          <Button variant="outline" size="sm" onClick={exitReview} disabled={refining}>
             Cancel
-          </button>
+          </Button>
         </div>
-        <p className="text-sm text-slate-300 bg-slate-800 border border-slate-700 rounded p-3 whitespace-pre-wrap">
+
+        <p className="text-sm text-foreground bg-muted rounded-md p-3 whitespace-pre-wrap">
           {result.finalResponse ||
             "The AI didn't propose any operations. Try rephrasing with more specifics."}
         </p>
 
         <div className="space-y-2">
-          <label className="text-xs text-slate-500" htmlFor="nle-refine">
+          <Label htmlFor="nle-refine" className="text-xs">
             Refine your request
-          </label>
-          <textarea
+          </Label>
+          <Textarea
             id="nle-refine"
             value={refinePrompt}
             onChange={(e) => setRefinePrompt(e.target.value)}
             disabled={refining}
             rows={2}
             placeholder="e.g. add details, pick a tool from the list, or constrain the timestamps"
-            className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-sm text-slate-200 disabled:opacity-50 resize-y"
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
                 e.preventDefault();
@@ -225,23 +211,22 @@ export default function NlePlanReviewPanel() {
               }
             }}
           />
-          <div className="flex justify-end">
-            <button
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground italic">
+              Each Re-plan is independent — the AI doesn't see your previous turns.
+            </p>
+            <Button
+              size="sm"
               onClick={handleRefine}
               disabled={refining || !refinePrompt.trim()}
-              className="op-btn"
               title="Send a refined prompt (Ctrl/Cmd+Enter)"
             >
               {refining ? "Re-planning…" : "Re-plan"}
-            </button>
+            </Button>
           </div>
-          <p className="text-xs text-slate-600 italic">
-            Each Re-plan is an independent request — the AI doesn't see your
-            previous turns. State your full intent in this one prompt.
-          </p>
         </div>
 
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           Model: <span className="font-mono">{result.modelVersion}</span>
           {result.costUsd != null && result.costUsd > 0 && (
             <> · cost: ${result.costUsd.toFixed(4)}</>
@@ -253,122 +238,125 @@ export default function NlePlanReviewPanel() {
 
   // --- Plan mode ------------------------------------------------------------
   const total = result.steps.length;
-  const validCount = result.steps.filter(
-    (s) => s.validationStatus === "valid",
-  ).length;
+  const validCount = result.steps.filter((s) => s.validationStatus === "valid").length;
   const invalidCount = total - validCount;
 
   return (
-    <div className="border border-slate-700 rounded bg-slate-900 p-4 space-y-3">
+    <div className="rounded-lg border border-border bg-card p-4 space-y-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-slate-200">
+          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+            <MessageSquare className="w-3.5 h-3.5 text-primary" />
             Review AI plan
           </h3>
-          <p className="text-xs text-slate-500 truncate">
+          <p className="text-xs text-muted-foreground mt-0.5 truncate">
             You asked: <span className="italic">{result.prompt}</span>
           </p>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             {enabledSteps.length} of {validCount} valid step
             {validCount === 1 ? "" : "s"} selected
             {invalidCount > 0 && (
-              <span className="text-yellow-500">
+              <span className="text-yellow-600">
                 {" · "}{invalidCount} invalid
               </span>
             )}
-            {" · model: "}<span className="font-mono">{result.modelVersion}</span>
+            {" · model: "}
+            <span className="font-mono">{result.modelVersion}</span>
             {result.costUsd != null && result.costUsd > 0 && (
               <> · ${result.costUsd.toFixed(4)}</>
             )}
           </p>
           {review.applyProgress && (
-            <p className="text-xs text-blue-400 mt-1">
+            <p className="text-xs text-primary mt-1">
               Applying step {review.applyProgress.currentIndex + 1} of{" "}
               {review.applyProgress.totalEnabled}…
             </p>
           )}
         </div>
         <div className="flex gap-2 shrink-0">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleCancel}
-            className="op-btn"
             title={applying ? "Stop applying further steps" : "Discard plan"}
           >
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
+            size="sm"
             onClick={handleApply}
             disabled={applying || isProcessing || enabledSteps.length === 0}
-            className="op-btn"
             title="Apply the selected steps in order"
           >
             {applying
               ? "Applying…"
               : `Apply ${enabledSteps.length} step${enabledSteps.length === 1 ? "" : "s"}`}
-          </button>
+          </Button>
         </div>
       </div>
 
       {result.finalResponse && (
-        <p className="text-xs text-slate-400 italic bg-slate-800 border border-slate-800 rounded p-2">
+        <p className="text-xs text-muted-foreground italic bg-muted rounded-md p-2">
           {result.finalResponse}
         </p>
       )}
 
-      <ol className="max-h-96 overflow-y-auto divide-y divide-slate-800 border border-slate-800 rounded">
-        {result.steps.map((step) => {
-          const isInvalid = step.validationStatus === "invalid";
-          const isExcluded = review.excludedStepIndices.has(step.stepIndex);
-          const isEnabled = !isInvalid && !isExcluded;
-          const range = previewRange(step);
-          return (
-            <li
-              key={step.stepIndex}
-              className={`flex items-center gap-2 px-2 py-1.5 text-sm ${
-                isEnabled ? "bg-slate-900" : "bg-slate-900/40 text-slate-500"
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => range && playRange(range[0], range[1])}
-                disabled={!range || applying}
-                className="px-1.5 text-slate-400 hover:text-slate-100 disabled:opacity-30"
-                aria-label={`Preview step ${step.stepIndex + 1}`}
-                title={range ? "Preview the time range this step affects" : "No preview for this step"}
-              >
-                ▶
-              </button>
-              <input
-                type="checkbox"
-                checked={isEnabled}
-                disabled={isInvalid || applying}
-                onChange={() => toggleStep(step.stepIndex)}
-                aria-label={`Toggle step ${step.stepIndex + 1}`}
-              />
-              <span className="font-mono text-xs text-slate-500 w-6 tabular-nums">
-                {step.stepIndex + 1}.
-              </span>
-              <span className="flex-1 truncate">{step.description}</span>
-              <span
-                className={`text-xs uppercase tracking-wide w-16 ${
-                  isInvalid ? "text-yellow-500" : "text-slate-500"
+      <ScrollArea className="max-h-96 rounded-md border border-border">
+        <ol className="divide-y divide-border">
+          {result.steps.map((step) => {
+            const isInvalid = step.validationStatus === "invalid";
+            const isExcluded = review.excludedStepIndices.has(step.stepIndex);
+            const isEnabled = !isInvalid && !isExcluded;
+            const range = previewRange(step);
+            return (
+              <li
+                key={step.stepIndex}
+                className={`flex items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
+                  isEnabled ? "bg-background" : "bg-muted/40 text-muted-foreground"
                 }`}
-                title={step.validationError ?? "valid"}
               >
-                {step.operation.type}
-              </span>
-              {isInvalid && (
-                <span
-                  className="text-xs text-yellow-400 truncate w-32"
-                  title={step.validationError ?? ""}
+                <button
+                  type="button"
+                  onClick={() => range && playRange(range[0], range[1])}
+                  disabled={!range || applying}
+                  className="flex items-center justify-center w-6 h-6 rounded hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  aria-label={`Preview step ${step.stepIndex + 1}`}
+                  title={range ? "Preview the time range this step affects" : "No preview for this step"}
                 >
-                  ✕ {step.validationError ?? "invalid"}
+                  <Play className="w-3 h-3" />
+                </button>
+                <Checkbox
+                  checked={isEnabled}
+                  disabled={isInvalid || applying}
+                  onCheckedChange={() => toggleStep(step.stepIndex)}
+                  aria-label={`Toggle step ${step.stepIndex + 1}`}
+                />
+                <span className="font-mono text-xs text-muted-foreground w-6 tabular-nums">
+                  {step.stepIndex + 1}.
                 </span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
+                <span className="flex-1 truncate">{step.description}</span>
+                <span
+                  className={`text-xs uppercase tracking-wide w-24 ${
+                    isInvalid ? "text-yellow-600" : "text-muted-foreground"
+                  }`}
+                  title={step.validationError ?? "valid"}
+                >
+                  {step.operation.type}
+                </span>
+                {isInvalid && (
+                  <span
+                    className="text-xs text-yellow-600 truncate w-32 flex items-center gap-1"
+                    title={step.validationError ?? ""}
+                  >
+                    <AlertTriangle className="w-3 h-3" />
+                    {step.validationError ?? "invalid"}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      </ScrollArea>
     </div>
   );
 }
