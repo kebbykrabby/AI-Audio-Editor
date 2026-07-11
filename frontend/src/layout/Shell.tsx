@@ -6,9 +6,10 @@ import { useEditorStore } from "../store/editorStore";
 import { useRestoreSession } from "../store/useRestoreSession";
 import UploadZone from "./UploadZone";
 import Toolbar from "./Toolbar";
+import TransportBar from "./TransportBar";
 import WaveformPlayer from "../audio/WaveformPlayer";
 import WaveformErrorBoundary from "../audio/WaveformErrorBoundary";
-import SelectionInfo from "../editor/SelectionInfo";
+import EditToolbar from "../editor/EditToolbar";
 import OperationPanel from "../editor/OperationPanel";
 import ChannelEditor from "../editor/ChannelEditor";
 import FillerReviewPanel from "../editor/FillerReviewPanel";
@@ -52,11 +53,9 @@ function Workspace() {
     );
   }
 
-  // Editor. Steps 5-7 will move panels into a right sidebar with tabs; for now
-  // the layout is single-column so each subsequent step can restyle one panel
-  // in place without also redoing the overall topology.
   return (
     <div className="min-h-screen flex flex-col bg-background">
+      {/* Header — logo + Toolbar (New/Undo/Redo/meta/Export) + UserMenu */}
       <header className="h-12 border-b border-border bg-card flex items-center px-4 gap-3 shrink-0">
         <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center shrink-0">
           <Music className="w-3.5 h-3.5 text-primary-foreground" />
@@ -67,7 +66,12 @@ function Workspace() {
         <UserMenu />
       </header>
 
-      {/* Processing overlay — full-screen dim while an operation runs. */}
+      {/* Horizontal EditToolbar directly under the header, per the harvest.
+          Hidden while in channel-edit mode — ChannelEditor renders its own
+          per-channel op panel. */}
+      {!channelEdit && <EditToolbar />}
+
+      {/* Processing overlay */}
       {isProcessing && (
         <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
           <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-lg text-sm text-foreground pointer-events-auto">
@@ -110,7 +114,7 @@ function Workspace() {
             <WaveformErrorBoundary onReset={() => setError(null)}>
               <WaveformPlayer />
             </WaveformErrorBoundary>
-            <SelectionInfo />
+            <TransportBar />
             {activeFillerReview ? (
               <FillerReviewPanel />
             ) : activeProfanityReview ? (

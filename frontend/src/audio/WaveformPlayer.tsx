@@ -1,9 +1,6 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.js";
-import { Pause, Play } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { formatTime } from "@/lib/time";
 import { useEditorStore } from "../store/editorStore";
 import { useAssetUrlRefresh } from "./useAssetUrlRefresh";
 
@@ -79,7 +76,6 @@ export default function WaveformPlayer() {
   const setSelection = useEditorStore((s) => s.setSelection);
   const selection = useEditorStore((s) => s.selection);
   const isPlaying = useEditorStore((s) => s.isPlaying);
-  const currentTimeSec = useEditorStore((s) => s.currentTimeSec);
   const playbackRequest = useEditorStore((s) => s.playbackRequest);
   const activeFillerReview = useEditorStore((s) => s.activeFillerReview);
   const activeProfanityReview = useEditorStore((s) => s.activeProfanityReview);
@@ -343,32 +339,14 @@ export default function WaveformPlayer() {
     }
   }, [selection?.startSec, selection?.endSec]);
 
-  const togglePlay = useCallback(() => {
-    wsRef.current?.playPause();
-  }, []);
-
   return (
-    <div>
-      <div className="relative rounded-xl border border-border bg-card overflow-hidden">
-        <div
-          ref={containerRef}
-          className="waveform-canvas w-full"
-        />
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-card/80 backdrop-blur-sm">
-            <span className="text-sm text-muted-foreground">Loading waveform…</span>
-          </div>
-        )}
-      </div>
-      <div className="flex items-center gap-3 mt-3">
-        <Button onClick={togglePlay} size="sm" className="gap-1.5">
-          {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-          {isPlaying ? "Pause" : "Play"}
-        </Button>
-        <span className="text-sm text-muted-foreground font-mono">
-          {formatTime(currentTimeSec)} / {formatTime(asset?.durationSec ?? 0)}
-        </span>
-      </div>
+    <div className="relative rounded-xl border border-border bg-card overflow-hidden">
+      <div ref={containerRef} className="waveform-canvas w-full" />
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-card/80 backdrop-blur-sm">
+          <span className="text-sm text-muted-foreground">Loading waveform…</span>
+        </div>
+      )}
     </div>
   );
 }
