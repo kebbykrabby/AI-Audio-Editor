@@ -1,8 +1,10 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useEditorStore } from "../store/editorStore";
 import ExportPopover from "./ExportPopover";
 
 export default function Toolbar() {
+  const navigate = useNavigate();
   const asset = useEditorStore((s) => s.currentAsset());
   const canUndo = useEditorStore((s) => s.canUndo());
   const canRedo = useEditorStore((s) => s.canRedo());
@@ -12,6 +14,13 @@ export default function Toolbar() {
   const setPlaying = useEditorStore((s) => s.setPlaying);
   const isPlaying = useEditorStore((s) => s.isPlaying);
   const channelEdit = useEditorStore((s) => s.channelEdit);
+
+  const handleNewFile = () => {
+    // Wipe editor state, then hop over to the Dashboard where the user can
+    // upload a fresh file or pick a project.
+    reset();
+    navigate("/");
+  };
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -41,12 +50,12 @@ export default function Toolbar() {
   return (
     <div className="flex items-center gap-2 min-w-0">
       <button
-        onClick={reset}
+        onClick={handleNewFile}
         disabled={!!channelEdit}
         className="toolbar-btn"
-        title="Upload a new file"
+        title="Back to projects"
       >
-        New File
+        Projects
       </button>
       <div className="w-px h-5 bg-border mx-1" />
       <span className="text-xs font-medium text-muted-foreground truncate">

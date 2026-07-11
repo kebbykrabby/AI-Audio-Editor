@@ -55,3 +55,23 @@ export async function verifyEmail(code: string): Promise<User> {
     body: JSON.stringify({ code }),
   });
 }
+
+export async function requestPasswordReset(email: string): Promise<void> {
+  await apiFetch<void>("/api/auth/password/forgot", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function resetPassword(
+  email: string,
+  code: string,
+  password: string,
+): Promise<void> {
+  await apiFetch<void>("/api/auth/password/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code, password }),
+  });
+}

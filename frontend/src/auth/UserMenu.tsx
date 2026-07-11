@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { logout } from "../api/auth";
 import { useAuthStore } from "../store/authStore";
 import { useEditorStore } from "../store/editorStore";
 
 export default function UserMenu() {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const resetEditor = useEditorStore((s) => s.reset);
@@ -23,6 +25,7 @@ export default function UserMenu() {
     resetEditor();
     clearAuth();
     setBusy(false);
+    navigate("/");
   };
 
   return (

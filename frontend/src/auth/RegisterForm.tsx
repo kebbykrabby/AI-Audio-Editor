@@ -1,4 +1,8 @@
 import { useState, type FormEvent } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { register } from "../api/auth";
 import { ApiRequestError } from "../api/client";
 import { useAuthStore } from "../store/authStore";
@@ -32,48 +36,51 @@ export default function RegisterForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <label className="text-sm text-slate-300">
-        Email
-        <input
+      <div className="space-y-1">
+        <Label htmlFor="reg-email">Email</Label>
+        <Input
+          id="reg-email"
           type="email"
           required
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"
         />
-      </label>
-      <label className="text-sm text-slate-300">
-        Password (min 8 chars)
-        <input
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="reg-password">Password</Label>
+        <Input
+          id="reg-password"
           type="password"
           required
           minLength={8}
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"
         />
-      </label>
-      <label className="text-sm text-slate-300">
-        Display name (optional)
-        <input
+        <p className="text-xs text-muted-foreground">At least 8 characters.</p>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="reg-name">
+          Display name <span className="text-muted-foreground font-normal">(optional)</span>
+        </Label>
+        <Input
+          id="reg-name"
           type="text"
           maxLength={120}
           autoComplete="name"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"
         />
-      </label>
-      {error && <div className="text-sm text-red-400">{error}</div>}
-      <button
-        type="submit"
-        disabled={busy}
-        className="rounded-md bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-60 hover:bg-blue-500"
-      >
+      </div>
+      {error && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+      <Button type="submit" disabled={busy} className="w-full">
         {busy ? "Creating account…" : "Create account"}
-      </button>
+      </Button>
     </form>
   );
 }

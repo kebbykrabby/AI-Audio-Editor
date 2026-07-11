@@ -1,10 +1,35 @@
 import type { Asset } from "../store/types";
 import { apiFetch, ApiRequestError } from "./client";
 
+/**
+ * Dashboard row shape — matches the backend's AssetListItem. Excludes signed
+ * URLs since the list endpoint doesn't return them; those are minted when a
+ * user opens the project.
+ */
+export interface AssetListItem {
+  assetId: string;
+  filename: string | null;
+  status: string;
+  durationSec: number | null;
+  sampleRate: number | null;
+  channels: number | null;
+  fileSizeBytes: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export async function uploadAudio(file: File): Promise<{ assetId: string; status: string }> {
   const form = new FormData();
   form.append("file", file);
   return apiFetch("/api/assets/upload", { method: "POST", body: form });
+}
+
+export async function listAssets(): Promise<{ assets: AssetListItem[] }> {
+  return apiFetch("/api/assets", { method: "GET" });
+}
+
+export async function deleteAsset(id: string): Promise<void> {
+  await apiFetch<void>(`/api/assets/${id}`, { method: "DELETE" });
 }
 
 export async function getAsset(id: string): Promise<Asset & { error?: { code: string; message: string } }> {

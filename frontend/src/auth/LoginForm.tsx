@@ -1,4 +1,8 @@
 import { useState, type FormEvent } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { login } from "../api/auth";
 import { ApiRequestError } from "../api/client";
 import { useAuthStore } from "../store/authStore";
@@ -27,37 +31,37 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <label className="text-sm text-slate-300">
-        Email
-        <input
+      <div className="space-y-1">
+        <Label htmlFor="login-email">Email</Label>
+        <Input
+          id="login-email"
           type="email"
           required
           autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"
         />
-      </label>
-      <label className="text-sm text-slate-300">
-        Password
-        <input
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="login-password">Password</Label>
+        <Input
+          id="login-password"
           type="password"
           required
           autoComplete="current-password"
           minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-slate-100"
         />
-      </label>
-      {error && <div className="text-sm text-red-400">{error}</div>}
-      <button
-        type="submit"
-        disabled={busy}
-        className="rounded-md bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-60 hover:bg-blue-500"
-      >
+      </div>
+      {error && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+      <Button type="submit" disabled={busy} className="w-full">
         {busy ? "Signing in…" : "Sign in"}
-      </button>
+      </Button>
     </form>
   );
 }

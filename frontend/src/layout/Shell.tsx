@@ -1,10 +1,10 @@
+import { useEffect } from "react";
+import { Navigate } from "react-router-dom";
 import { Music } from "lucide-react";
 
-import AuthGate from "../auth/AuthGate";
 import UserMenu from "../auth/UserMenu";
 import { useEditorStore } from "../store/editorStore";
 import { useRestoreSession } from "../store/useRestoreSession";
-import UploadZone from "./UploadZone";
 import Toolbar from "./Toolbar";
 import TransportBar from "./TransportBar";
 import WaveformPlayer from "../audio/WaveformPlayer";
@@ -17,7 +17,13 @@ import NlePlanReviewPanel from "../editor/NlePlanReviewPanel";
 import ProfanityReviewPanel from "../editor/ProfanityReviewPanel";
 import VersionHistoryPanel from "../editor/VersionHistoryPanel";
 
-function Workspace() {
+/**
+ * Editor screen (route: `/editor`). AuthGate is applied one level up in App;
+ * if the user has no ready asset (fresh session, no persisted tip, or a
+ * failed restore), we send them back to the Dashboard where they can upload
+ * or pick a project.
+ */
+export default function Shell() {
   const { isRestoring } = useRestoreSession();
   const asset = useEditorStore((s) => s.currentAsset());
   const error = useEditorStore((s) => s.error);
@@ -30,6 +36,15 @@ function Workspace() {
   const activeProfanityReview = useEditorStore((s) => s.activeProfanityReview);
   const activeNlePlanReview = useEditorStore((s) => s.activeNlePlanReview);
 
+  // Wipe any lingering error/warning banners on unmount so navigating away and
+  // back doesn't re-show stale messages.
+  useEffect(() => {
+    return () => {
+      setError(null);
+      setWarning(null);
+    };
+  }, [setError, setWarning]);
+
   if (isRestoring) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-background">
@@ -38,25 +53,13 @@ function Workspace() {
     );
   }
 
-  // No asset yet — upload landing. Header carries the branded logo + account menu.
   if (!asset || asset.status !== "ready") {
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <header className="h-12 border-b border-border bg-card flex items-center px-4 gap-3 shrink-0">
-          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center">
-            <Music className="w-3.5 h-3.5 text-primary-foreground" />
-          </div>
-          <h1 className="text-sm font-medium text-foreground flex-1">AI Audio Editor</h1>
-          <UserMenu />
-        </header>
-        <UploadZone />
-      </div>
-    );
+    // No asset in this session and no persisted tip to restore — go pick one.
+    return <Navigate to="/" replace />;
   }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* Header — logo + Toolbar (New/Undo/Redo/meta/Export) + UserMenu */}
       <header className="h-12 border-b border-border bg-card flex items-center px-4 gap-3 shrink-0">
         <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center shrink-0">
           <Music className="w-3.5 h-3.5 text-primary-foreground" />
@@ -67,12 +70,8 @@ function Workspace() {
         <UserMenu />
       </header>
 
-      {/* Horizontal EditToolbar directly under the header, per the harvest.
-          Hidden while in channel-edit mode — ChannelEditor renders its own
-          per-channel op panel. */}
       {!channelEdit && <EditToolbar />}
 
-      {/* Processing overlay */}
       {isProcessing && (
         <div className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
           <div className="rounded-lg border border-border bg-card px-4 py-3 shadow-lg text-sm text-foreground pointer-events-auto">
@@ -130,13 +129,5 @@ function Workspace() {
         )}
       </div>
     </div>
-  );
-}
-
-export default function Shell() {
-  return (
-    <AuthGate>
-      <Workspace />
-    </AuthGate>
   );
 }
