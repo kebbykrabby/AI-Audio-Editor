@@ -15,6 +15,13 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Path alias — mirrors the Vite alias so `@/foo` resolves to `src/foo`
+       for both the type checker and the bundler. `paths` without `baseUrl`
+       resolves relative to this tsconfig, which is what we want. */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
