@@ -160,6 +160,13 @@ interface ChannelEditState {
 
 interface EditorState {
   assetHistory: Asset[];
+  /**
+   * Parallel array to `assetHistory` — human-readable label per version, used
+   * by the Version History panel. Populated at `pushAsset` time (session-
+   * local; nothing persisted server-side). Restored sessions default each
+   * entry to "Version N" until the user makes a new edit.
+   */
+  historyLabels: string[];
   currentIndex: number;
   isPlaying: boolean;
   currentTimeSec: number;
@@ -180,7 +187,12 @@ interface EditorState {
   canRedo: () => boolean;
 
   setAssetReady: (asset: Asset) => void;
-  pushAsset: (asset: Asset, durationChanged: boolean) => void;
+  pushAsset: (asset: Asset, durationChanged: boolean, label?: string) => void;
+  /**
+   * Jump to any index in the linear history. Clicking a row in the Version
+   * History panel calls this. Same-index calls are a no-op.
+   */
+  jumpToHistory: (index: number) => void;
   refreshAssetUrls: (
     assetId: string,
     audioUrl: string | null,
@@ -222,6 +234,7 @@ const MAX_HISTORY = 100;
 
 export const useEditorStore = create<EditorState>((set, get) => ({
   assetHistory: [],
+  historyLabels: [],
   currentIndex: -1,
   isPlaying: false,
   currentTimeSec: 0,
@@ -251,27 +264,45 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   canRedo: () => get().currentIndex < get().assetHistory.length - 1,
 
   setAssetReady: (asset) => {
-    set({ assetHistory: [asset], currentIndex: 0, error: null, warning: null });
+    set({
+      assetHistory: [asset],
+      historyLabels: [asset.filename || "Original upload"],
+      currentIndex: 0,
+      error: null,
+      warning: null,
+    });
     persistCurrentAssetId(asset.assetId);
   },
 
-  pushAsset: (asset, durationChanged) => {
-    const { assetHistory, currentIndex } = get();
+  pushAsset: (asset, durationChanged, label) => {
+    const { assetHistory, historyLabels, currentIndex } = get();
     let newHistory = assetHistory.slice(0, currentIndex + 1);
+    let newLabels = historyLabels.slice(0, currentIndex + 1);
     newHistory.push(asset);
+    newLabels.push(label ?? "Edit");
     let newIndex = newHistory.length - 1;
     if (newHistory.length > MAX_HISTORY) {
       const overflow = newHistory.length - MAX_HISTORY;
       newHistory = newHistory.slice(overflow);
+      newLabels = newLabels.slice(overflow);
       newIndex -= overflow;
     }
     set({
       assetHistory: newHistory,
+      historyLabels: newLabels,
       currentIndex: newIndex,
       selection: durationChanged ? null : get().selection,
       warning: null,
     });
     persistCurrentAssetId(asset.assetId);
+  },
+
+  jumpToHistory: (index) => {
+    const { assetHistory, currentIndex } = get();
+    if (index === currentIndex) return;
+    if (index < 0 || index >= assetHistory.length) return;
+    set({ currentIndex: index, selection: null, warning: null });
+    persistCurrentAssetId(assetHistory[index].assetId);
   },
 
   refreshAssetUrls: (assetId, audioUrl, waveformUrl) => {
@@ -458,6 +489,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   reset: () => {
     set({
       assetHistory: [],
+      historyLabels: [],
       currentIndex: -1,
       isPlaying: false,
       currentTimeSec: 0,

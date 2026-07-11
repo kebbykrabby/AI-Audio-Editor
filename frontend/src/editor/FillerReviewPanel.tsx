@@ -76,7 +76,11 @@ export default function FillerReviewPanel() {
         signal: controller.signal,
       });
       if (completed.asset) {
-        pushAsset(completed.asset, /* durationChanged */ true);
+        pushAsset(
+          completed.asset,
+          /* durationChanged */ true,
+          `Removed ${accepted.length} filler word${accepted.length === 1 ? "" : "s"}`,
+        );
       }
       exitReview();
     } catch (e) {

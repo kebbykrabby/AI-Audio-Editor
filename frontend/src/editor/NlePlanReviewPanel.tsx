@@ -113,7 +113,12 @@ export default function NlePlanReviewPanel() {
         });
         if (completed.asset) {
           const durationChanged = DURATION_CHANGING_OPS.has(step.operation.type);
-          pushAsset(completed.asset, durationChanged);
+          // Truncate LLM descriptions so the history rows stay one line.
+          const shortLabel =
+            step.description.length > 40
+              ? step.description.slice(0, 37) + "…"
+              : step.description || `AI step: ${step.operation.type}`;
+          pushAsset(completed.asset, durationChanged, `AI · ${shortLabel}`);
           currentAssetId = completed.asset.assetId;
         }
       }

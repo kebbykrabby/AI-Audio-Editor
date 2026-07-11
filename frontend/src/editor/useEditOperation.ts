@@ -66,7 +66,9 @@ export function useEditOperation() {
         const completed = await pollOperation(pendingOperation.operationId, {
           signal: controller.signal,
         });
-        applyCompletion(completed, pendingOperation.type as OpType);
+        // We don't have the original params on a resumed op — use empty to
+        // keep labels generic ("Trim", not "Trim to 0:15–1:30").
+        applyCompletion(completed, pendingOperation.type as OpType, {});
       } catch (e) {
         if (e instanceof ApiRequestError && e.code === "ABORTED") return;
         setError(friendlyMessage(e));
@@ -92,7 +94,11 @@ export function useEditOperation() {
     return e instanceof Error ? e.message : "Operation failed";
   };
 
-  const applyCompletion = (res: OperationResponse, type: OpType) => {
+  const applyCompletion = (
+    res: OperationResponse,
+    type: OpType,
+    params: Record<string, unknown>,
+  ) => {
     if (!res.asset) return;
     if (type === "split_channels") {
       if (res.secondaryAsset && asset) {
@@ -101,7 +107,7 @@ export function useEditOperation() {
     } else if (channelEdit) {
       updateChannelAsset(channelEdit.activeChannel, res.asset);
     } else {
-      pushAsset(res.asset, DURATION_CHANGING.includes(type));
+      pushAsset(res.asset, DURATION_CHANGING.includes(type), labelFor(type, params));
     }
     if (res.warning) setWarning(res.warning);
   };
@@ -156,7 +162,7 @@ export function useEditOperation() {
       const completed = await pollOperation(enqueued.operationId, {
         signal: controller.signal,
       });
-      applyCompletion(completed, type);
+      applyCompletion(completed, type, params);
     } catch (e: unknown) {
       if (e instanceof ApiRequestError && e.code === "ABORTED") return;
       setError(friendlyMessage(e));
@@ -167,4 +173,68 @@ export function useEditOperation() {
   };
 
   return { runOp };
+}
+
+/**
+ * Turn a dispatched op + its params into a human-readable version label for
+ * the History panel. Kept tight — the row width is small so the label needs
+ * to fit in ~30 chars.
+ */
+function labelFor(type: OpType, params: Record<string, unknown>): string {
+  const num = (k: string) => (typeof params[k] === "number" ? (params[k] as number) : null);
+  const fmt = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+  switch (type) {
+    case "trim": {
+      const s = num("start_sec");
+      const e = num("end_sec");
+      return s != null && e != null ? `Trim ${fmt(s)}–${fmt(e)}` : "Trim";
+    }
+    case "delete": {
+      const s = num("start_sec");
+      const e = num("end_sec");
+      return s != null && e != null ? `Delete ${fmt(s)}–${fmt(e)}` : "Delete";
+    }
+    case "fade_in": {
+      const d = num("duration_sec");
+      return d != null ? `Fade in (${d.toFixed(1)}s)` : "Fade in";
+    }
+    case "fade_out": {
+      const d = num("duration_sec");
+      return d != null ? `Fade out (${d.toFixed(1)}s)` : "Fade out";
+    }
+    case "gain": {
+      const g = num("gain_db");
+      return g != null ? `Gain ${g > 0 ? "+" : ""}${g} dB` : "Gain";
+    }
+    case "normalize": {
+      const t = num("target_db");
+      return t != null ? `Normalize to ${t} dB` : "Normalize";
+    }
+    case "reverse":
+      return "Reverse";
+    case "remove_silence":
+      return "Remove silence";
+    case "speed": {
+      const f = num("factor");
+      return f != null ? `Speed ${f.toFixed(2)}×` : "Speed";
+    }
+    case "mono_mixdown":
+      return "Mono mixdown";
+    case "swap_channels":
+      return "Swap channels";
+    case "extract_channel": {
+      const ch = params.channel;
+      return ch === "left"
+        ? "Extract left"
+        : ch === "right"
+          ? "Extract right"
+          : "Extract channel";
+    }
+    case "split_channels":
+      return "Split channels";
+  }
 }

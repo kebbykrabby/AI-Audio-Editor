@@ -104,7 +104,11 @@ export default function ProfanityReviewPanel() {
       });
       if (completed.asset) {
         const durationChanged = review.mode === "cut";
-        pushAsset(completed.asset, durationChanged);
+        pushAsset(
+          completed.asset,
+          durationChanged,
+          `Censored ${accepted.length} word${accepted.length === 1 ? "" : "s"} (${review.mode})`,
+        );
       }
       exitReview();
     } catch (e) {

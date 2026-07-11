@@ -15,6 +15,7 @@ import ChannelEditor from "../editor/ChannelEditor";
 import FillerReviewPanel from "../editor/FillerReviewPanel";
 import NlePlanReviewPanel from "../editor/NlePlanReviewPanel";
 import ProfanityReviewPanel from "../editor/ProfanityReviewPanel";
+import VersionHistoryPanel from "../editor/VersionHistoryPanel";
 
 function Workspace() {
   const { isRestoring } = useRestoreSession();
@@ -124,6 +125,7 @@ function Workspace() {
             ) : (
               <OperationPanel />
             )}
+            <VersionHistoryPanel />
           </>
         )}
       </div>

@@ -64,8 +64,17 @@ export function useRestoreSession(): { isRestoring: boolean } {
         const history = chain.reverse();
         const tip = history[history.length - 1] ?? null;
 
+        // Labels aren't persisted server-side; the descriptive text for each
+        // edit lives only in the session that made it. On restore we render
+        // generic "Original upload" / "Version N" — good enough for jumping
+        // between saved states.
+        const labels = history.map((a, i) =>
+          i === 0 ? a.filename || "Original upload" : `Version ${i + 1}`,
+        );
+
         useEditorStore.setState({
           assetHistory: history,
+          historyLabels: labels,
           currentIndex: history.length - 1,
           selection: null,
           error: null,

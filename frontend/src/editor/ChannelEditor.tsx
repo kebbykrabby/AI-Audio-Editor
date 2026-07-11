@@ -43,7 +43,7 @@ export default function ChannelEditor() {
         right_asset_id: rightAsset.assetId,
       });
       const res = await pollOperation(queued.operationId);
-      if (res.asset) pushAsset(res.asset, false);
+      if (res.asset) pushAsset(res.asset, false, "Merged channels to stereo");
       exitChannelEdit();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Merge failed");
