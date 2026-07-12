@@ -231,12 +231,6 @@ export default function NlePlanReviewPanel() {
           </div>
         </div>
 
-        <p className="text-xs text-muted-foreground">
-          Model: <span className="font-mono">{result.modelVersion}</span>
-          {result.costUsd != null && result.costUsd > 0 && (
-            <> · cost: ${result.costUsd.toFixed(4)}</>
-          )}
-        </p>
       </div>
     );
   }
@@ -247,66 +241,42 @@ export default function NlePlanReviewPanel() {
   const invalidCount = total - validCount;
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-            <MessageSquare className="w-3.5 h-3.5 text-primary" />
-            Review AI plan
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5 truncate">
-            You asked: <span className="italic">{result.prompt}</span>
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {enabledSteps.length} of {validCount} valid step
-            {validCount === 1 ? "" : "s"} selected
-            {invalidCount > 0 && (
-              <span className="text-yellow-600">
-                {" · "}{invalidCount} invalid
-              </span>
-            )}
-            {" · model: "}
-            <span className="font-mono">{result.modelVersion}</span>
-            {result.costUsd != null && result.costUsd > 0 && (
-              <> · ${result.costUsd.toFixed(4)}</>
-            )}
-          </p>
-          {review.applyProgress && (
-            <p className="text-xs text-primary mt-1">
-              Applying step {review.applyProgress.currentIndex + 1} of{" "}
-              {review.applyProgress.totalEnabled}…
-            </p>
+    <div className="rounded-lg border border-border bg-card shadow-sm flex flex-col overflow-hidden">
+      {/* Header — title alone on a row, meta below, no LLM branding. */}
+      <div className="p-3 border-b border-border space-y-1.5">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+          <MessageSquare className="w-3.5 h-3.5 text-primary" />
+          Review AI plan
+        </h3>
+        <p className="text-xs text-muted-foreground break-words">
+          You asked: <span className="italic">{result.prompt}</span>
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {enabledSteps.length} of {validCount} valid step
+          {validCount === 1 ? "" : "s"} selected
+          {invalidCount > 0 && (
+            <span className="text-yellow-600">
+              {" · "}{invalidCount} invalid
+            </span>
           )}
-        </div>
-        <div className="flex gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCancel}
-            title={applying ? "Stop applying further steps" : "Discard plan"}
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleApply}
-            disabled={applying || isProcessing || enabledSteps.length === 0}
-            title="Apply the selected steps in order"
-          >
-            {applying
-              ? "Applying…"
-              : `Apply ${enabledSteps.length} step${enabledSteps.length === 1 ? "" : "s"}`}
-          </Button>
-        </div>
+        </p>
+        {review.applyProgress && (
+          <p className="text-xs text-primary">
+            Applying step {review.applyProgress.currentIndex + 1} of{" "}
+            {review.applyProgress.totalEnabled}…
+          </p>
+        )}
       </div>
 
       {result.finalResponse && (
-        <p className="text-xs text-muted-foreground italic bg-muted rounded-md p-2">
+        <p className="mx-3 mt-3 text-xs text-muted-foreground italic bg-muted rounded-md p-2">
           {result.finalResponse}
         </p>
       )}
 
-      <ScrollArea className="max-h-96 rounded-md border border-border">
+      {/* Steps list — sidebar-friendly rows: description first, op-type badge
+          on a second line so nothing overflows in narrow widths. */}
+      <ScrollArea className="max-h-64 mx-3 my-3 rounded-md border border-border">
         <ol className="divide-y divide-border">
           {result.steps.map((step) => {
             const isInvalid = step.validationStatus === "invalid";
@@ -316,52 +286,117 @@ export default function NlePlanReviewPanel() {
             return (
               <li
                 key={step.stepIndex}
-                className={`flex items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
+                className={`px-2 py-1.5 text-sm transition-colors ${
                   isEnabled ? "bg-background" : "bg-muted/40 text-muted-foreground"
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={() => range && playRange(range[0], range[1])}
-                  disabled={!range || applying}
-                  className="flex items-center justify-center w-6 h-6 rounded hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-30"
-                  aria-label={`Preview step ${step.stepIndex + 1}`}
-                  title={range ? "Preview the time range this step affects" : "No preview for this step"}
-                >
-                  <Play className="w-3 h-3" />
-                </button>
-                <Checkbox
-                  checked={isEnabled}
-                  disabled={isInvalid || applying}
-                  onCheckedChange={() => toggleStep(step.stepIndex)}
-                  aria-label={`Toggle step ${step.stepIndex + 1}`}
-                />
-                <span className="font-mono text-xs text-muted-foreground w-6 tabular-nums">
-                  {step.stepIndex + 1}.
-                </span>
-                <span className="flex-1 truncate">{step.description}</span>
-                <span
-                  className={`text-xs uppercase tracking-wide w-24 ${
-                    isInvalid ? "text-yellow-600" : "text-muted-foreground"
-                  }`}
-                  title={step.validationError ?? "valid"}
-                >
-                  {step.operation.type}
-                </span>
-                {isInvalid && (
-                  <span
-                    className="text-xs text-yellow-600 truncate w-32 flex items-center gap-1"
-                    title={step.validationError ?? ""}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => range && playRange(range[0], range[1])}
+                    disabled={!range || applying}
+                    className="flex items-center justify-center w-6 h-6 rounded hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-30 shrink-0"
+                    aria-label={`Preview step ${step.stepIndex + 1}`}
+                    title={range ? "Preview the time range this step affects" : "No preview for this step"}
                   >
-                    <AlertTriangle className="w-3 h-3" />
-                    {step.validationError ?? "invalid"}
+                    <Play className="w-3 h-3" />
+                  </button>
+                  <Checkbox
+                    checked={isEnabled}
+                    disabled={isInvalid || applying}
+                    onCheckedChange={() => toggleStep(step.stepIndex)}
+                    aria-label={`Toggle step ${step.stepIndex + 1}`}
+                  />
+                  <span className="font-mono text-xs text-muted-foreground tabular-nums shrink-0">
+                    {step.stepIndex + 1}.
                   </span>
-                )}
+                  <span className="flex-1 min-w-0 break-words text-xs leading-snug">
+                    {step.description}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 mt-1 pl-8">
+                  <span
+                    className={`text-[10px] uppercase tracking-wide ${
+                      isInvalid ? "text-yellow-600" : "text-muted-foreground"
+                    }`}
+                    title={step.validationError ?? "valid"}
+                  >
+                    {step.operation.type}
+                  </span>
+                  {isInvalid && (
+                    <span
+                      className="text-[10px] text-yellow-600 flex items-center gap-1 min-w-0"
+                      title={step.validationError ?? ""}
+                    >
+                      <AlertTriangle className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{step.validationError ?? "invalid"}</span>
+                    </span>
+                  )}
+                </div>
               </li>
             );
           })}
         </ol>
       </ScrollArea>
+
+      {/* Apply / Cancel — sticky footer, full-width buttons so they always fit. */}
+      <div className="px-3 pb-3 flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleCancel}
+          className="flex-1"
+          title={applying ? "Stop applying further steps" : "Discard plan"}
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          onClick={handleApply}
+          disabled={applying || isProcessing || enabledSteps.length === 0}
+          className="flex-1"
+          title="Apply the selected steps in order"
+        >
+          {applying
+            ? "Applying…"
+            : `Apply ${enabledSteps.length}`}
+        </Button>
+      </div>
+
+      {/* Chat-style refinement — send a follow-up prompt to swap the current
+          plan for a new one. Each refine is independent (no chat history is
+          sent server-side); the user re-states their full intent. */}
+      <div className="border-t border-border px-3 py-3 space-y-2 bg-muted/30">
+        <Label htmlFor="nle-plan-refine" className="text-xs flex items-center gap-1.5">
+          <MessageSquare className="w-3 h-3" />
+          Ask for changes
+        </Label>
+        <Textarea
+          id="nle-plan-refine"
+          value={refinePrompt}
+          onChange={(e) => setRefinePrompt(e.target.value)}
+          disabled={refining || applying}
+          rows={2}
+          placeholder='e.g. "Make the fade 3 seconds instead" or "Add a normalize step"'
+          className="text-xs"
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              void handleRefine();
+            }
+          }}
+        />
+        <Button
+          size="sm"
+          onClick={handleRefine}
+          disabled={refining || applying || !refinePrompt.trim()}
+          className="w-full gap-1.5"
+          title="Send a new prompt to replace this plan (Ctrl/Cmd+Enter)"
+        >
+          <MessageSquare className="w-3 h-3" />
+          {refining ? "Rethinking…" : "Send"}
+        </Button>
+      </div>
     </div>
   );
 }
