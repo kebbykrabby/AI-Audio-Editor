@@ -122,8 +122,19 @@ export default function WaveformPlayer() {
       plugins: [regions],
     });
 
-    // Load audio with pre-computed peaks if available
-    if (asset.waveformUrl && asset.durationSec) {
+    // Load audio + peaks.
+    //
+    // The backend generates a *mono* peaks JSON (`max(abs(L), abs(R))` per
+    // window). Feeding that to `splitChannels` would leave the R row empty
+    // because WaveSurfer only sees one channel of data. For stereo files we
+    // skip the peaks JSON and let WaveSurfer decode the actual audio — its
+    // own decoder extracts real per-channel data. Costs a one-time client
+    // decode; the result is cached in the AudioBuffer.
+    //
+    // Mono files keep the fast pre-computed-peaks path.
+    if (isStereo) {
+      ws.load(asset.audioUrl!);
+    } else if (asset.waveformUrl && asset.durationSec) {
       fetch(asset.waveformUrl)
         .then((r) => r.json())
         .then((peaks: number[]) => {
