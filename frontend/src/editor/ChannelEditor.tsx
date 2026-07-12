@@ -8,17 +8,17 @@ import TransportBar from "../layout/TransportBar";
 import { enqueueOperation, pollOperation } from "../api/operations";
 import { useEditorStore } from "../store/editorStore";
 import EditToolbar from "./EditToolbar";
-import OperationPanel from "./OperationPanel";
 
 /**
  * Sub-mode: the user split a stereo asset into (L, R) and is editing each
  * side independently. Rendered instead of the normal editor body when
  * `channelEdit` is set.
  *
- * We re-mount `WaveformPlayer + TransportBar + EditToolbar + OperationPanel`
- * inside this container. `currentAsset()` in the store returns the active
- * channel while `channelEdit` is set, so those inner components stay
- * unaware they're in channel-edit mode.
+ * We re-mount `EditToolbar + WaveformPlayer + TransportBar` inside this
+ * container. `currentAsset()` in the store returns the active channel while
+ * `channelEdit` is set, so those inner components stay unaware they're in
+ * channel-edit mode. AI features aren't offered here — transcription on a
+ * mono channel of a stereo source is rarely useful.
  */
 export default function ChannelEditor() {
   const channelEdit = useEditorStore((s) => s.channelEdit);
@@ -104,8 +104,6 @@ export default function ChannelEditor() {
         <WaveformPlayer />
       </WaveformErrorBoundary>
       <TransportBar />
-
-      <OperationPanel />
     </div>
   );
 }

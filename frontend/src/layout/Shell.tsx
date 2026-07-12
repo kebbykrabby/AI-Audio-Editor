@@ -1,27 +1,28 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { Music } from "lucide-react";
 
 import UserMenu from "../auth/UserMenu";
 import { useEditorStore } from "../store/editorStore";
 import { useRestoreSession } from "../store/useRestoreSession";
+import SidePanel from "./SidePanel";
 import Toolbar from "./Toolbar";
 import TransportBar from "./TransportBar";
 import WaveformPlayer from "../audio/WaveformPlayer";
 import WaveformErrorBoundary from "../audio/WaveformErrorBoundary";
 import EditToolbar from "../editor/EditToolbar";
-import OperationPanel from "../editor/OperationPanel";
 import ChannelEditor from "../editor/ChannelEditor";
-import FillerReviewPanel from "../editor/FillerReviewPanel";
-import NlePlanReviewPanel from "../editor/NlePlanReviewPanel";
-import ProfanityReviewPanel from "../editor/ProfanityReviewPanel";
-import VersionHistoryPanel from "../editor/VersionHistoryPanel";
+
+type Tab = "history" | "fillers" | "censor" | "ai";
 
 /**
- * Editor screen (route: `/editor`). AuthGate is applied one level up in App;
- * if the user has no ready asset (fresh session, no persisted tip, or a
- * failed restore), we send them back to the Dashboard where they can upload
- * or pick a project.
+ * Editor route (`/editor`). Two-column layout:
+ *   - Left: EditToolbar strip + waveform card + TransportBar dock (all `flex-1`)
+ *   - Right: SidePanel with 4 tabs (History / Fillers / Censor / AI) + a
+ *     collapse rail
+ *
+ * When the user has no ready asset (fresh session, failed restore, deleted
+ * project) we send them back to the Dashboard.
  */
 export default function Shell() {
   const { isRestoring } = useRestoreSession();
@@ -32,12 +33,10 @@ export default function Shell() {
   const setError = useEditorStore((s) => s.setError);
   const setWarning = useEditorStore((s) => s.setWarning);
   const channelEdit = useEditorStore((s) => s.channelEdit);
-  const activeFillerReview = useEditorStore((s) => s.activeFillerReview);
-  const activeProfanityReview = useEditorStore((s) => s.activeProfanityReview);
-  const activeNlePlanReview = useEditorStore((s) => s.activeNlePlanReview);
 
-  // Wipe any lingering error/warning banners on unmount so navigating away and
-  // back doesn't re-show stale messages.
+  const [tab, setTab] = useState<Tab>("history");
+  const [sideCollapsed, setSideCollapsed] = useState(false);
+
   useEffect(() => {
     return () => {
       setError(null);
@@ -54,12 +53,11 @@ export default function Shell() {
   }
 
   if (!asset || asset.status !== "ready") {
-    // No asset in this session and no persisted tip to restore — go pick one.
     return <Navigate to="/" replace />;
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
       <header className="h-12 border-b border-border bg-card flex items-center px-4 gap-3 shrink-0">
         <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center shrink-0">
           <Music className="w-3.5 h-3.5 text-primary-foreground" />
@@ -82,7 +80,7 @@ export default function Shell() {
 
       {error && (
         <div
-          className="px-4 py-2 border-b border-destructive/30 bg-destructive/10 text-destructive text-sm flex justify-between items-center"
+          className="px-4 py-2 border-b border-destructive/30 bg-destructive/10 text-destructive text-sm flex justify-between items-center shrink-0"
           role="alert"
         >
           <span>{error}</span>
@@ -95,7 +93,7 @@ export default function Shell() {
         </div>
       )}
       {warning && (
-        <div className="px-4 py-2 border-b bg-yellow-100 text-yellow-900 border-yellow-300 text-sm flex justify-between items-center">
+        <div className="px-4 py-2 border-b bg-yellow-100 text-yellow-900 border-yellow-300 text-sm flex justify-between items-center shrink-0">
           <span>{warning}</span>
           <button
             onClick={() => setWarning(null)}
@@ -106,25 +104,33 @@ export default function Shell() {
         </div>
       )}
 
-      <div className="flex-1 p-4 space-y-4">
+      {/* Two-column body */}
+      <div className="flex-1 flex overflow-hidden">
         {channelEdit ? (
-          <ChannelEditor />
+          <div className="flex-1 p-4 overflow-auto">
+            <ChannelEditor />
+          </div>
         ) : (
           <>
-            <WaveformErrorBoundary onReset={() => setError(null)}>
-              <WaveformPlayer />
-            </WaveformErrorBoundary>
-            <TransportBar />
-            {activeFillerReview ? (
-              <FillerReviewPanel />
-            ) : activeProfanityReview ? (
-              <ProfanityReviewPanel />
-            ) : activeNlePlanReview ? (
-              <NlePlanReviewPanel />
-            ) : (
-              <OperationPanel />
-            )}
-            <VersionHistoryPanel />
+            {/* Left: waveform + transport */}
+            <div className="flex-1 flex flex-col min-w-0">
+              <div className="flex-1 p-4 min-h-0">
+                <WaveformErrorBoundary onReset={() => setError(null)}>
+                  <WaveformPlayer />
+                </WaveformErrorBoundary>
+              </div>
+              <div className="px-4 pb-4">
+                <TransportBar />
+              </div>
+            </div>
+
+            {/* Right: sidebar with tabs */}
+            <SidePanel
+              tab={tab}
+              setTab={setTab}
+              collapsed={sideCollapsed}
+              setCollapsed={setSideCollapsed}
+            />
           </>
         )}
       </div>

@@ -100,9 +100,18 @@ export default function WaveformPlayer() {
     const progressColor = readThemeColor("--primary", "#1d4ed8");
     const cursorColor = readThemeColor("--foreground", "#f59e0b", 0.75);
 
+    // Split-channel rendering when the asset is stereo — L and R draw as two
+    // stacked rows inside the same wavesurfer instance. Mono files stay as a
+    // single row. The height doubles so each channel keeps ~90 px of vertical
+    // resolution.
+    const isStereo = (asset.channels ?? 1) >= 2;
+    const rowHeight = 90;
+    // splitChannels expects an array of per-channel option overrides. Two
+    // empty objects → two independent channel rows with the parent options.
     const ws = WaveSurfer.create({
       container: containerRef.current,
-      height: 180,
+      height: isStereo ? rowHeight : 180,
+      splitChannels: isStereo ? [{}, {}] : undefined,
       waveColor,
       progressColor,
       cursorColor,
@@ -339,9 +348,26 @@ export default function WaveformPlayer() {
     }
   }, [selection?.startSec, selection?.endSec]);
 
+  const isStereo = (asset?.channels ?? 1) >= 2;
+
   return (
-    <div className="relative rounded-xl border border-border bg-card overflow-hidden">
+    <div className="relative rounded-xl border border-border bg-card overflow-hidden h-full">
       <div ref={containerRef} className="waveform-canvas w-full" />
+      {isStereo && (
+        <>
+          {/* Channel labels overlaid at the far-left of each strip — anchored to
+              the top of the row so they don't get covered by wave bars. */}
+          <span className="absolute left-2 top-1 text-xs font-mono text-muted-foreground pointer-events-none">
+            L
+          </span>
+          <span
+            className="absolute left-2 text-xs font-mono text-muted-foreground pointer-events-none"
+            style={{ top: 91 }}
+          >
+            R
+          </span>
+        </>
+      )}
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center bg-card/80 backdrop-blur-sm">
           <span className="text-sm text-muted-foreground">Loading waveform…</span>
