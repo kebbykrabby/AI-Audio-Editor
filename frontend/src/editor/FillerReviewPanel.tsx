@@ -104,7 +104,6 @@ export default function FillerReviewPanel() {
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             {accepted.length} of {total} selected
-            {review.result.modelVersion && <> · model: {review.result.modelVersion}</>}
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -147,7 +146,8 @@ export default function FillerReviewPanel() {
         </span>
       </div>
 
-      {/* Region list */}
+      {/* Region list — sidebar-friendly rows: word on line 1 (full width),
+          timestamp + category + confidence on line 2 (small meta). */}
       {total === 0 ? (
         <p className="text-sm text-muted-foreground">
           No filler words detected in this audio.
@@ -162,36 +162,38 @@ export default function FillerReviewPanel() {
               return (
                 <li
                   key={r.wordIndex}
-                  className={`flex items-center gap-2 px-2 py-1.5 text-sm transition-colors ${
+                  className={`px-2 py-1.5 text-sm transition-colors ${
                     isAccepted ? "bg-background" : "bg-muted/40 text-muted-foreground"
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => playRange(r.start, r.end)}
-                    disabled={committing}
-                    className="flex items-center justify-center w-6 h-6 rounded hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-40"
-                    aria-label={`Preview region at ${r.start.toFixed(2)}s`}
-                    title="Preview this segment"
-                  >
-                    <Play className="w-3 h-3" />
-                  </button>
-                  <Checkbox
-                    checked={isAccepted}
-                    disabled={committing || belowFloor}
-                    onCheckedChange={() => toggleReject(r.wordIndex)}
-                    aria-label={`Toggle region at ${r.start.toFixed(2)}s`}
-                  />
-                  <span className="font-mono text-xs text-muted-foreground w-28 tabular-nums">
-                    {formatTime(r.start)}–{formatTime(r.end)}
-                  </span>
-                  <span className="flex-1 truncate">{r.text}</span>
-                  <span className="text-xs uppercase tracking-wide text-muted-foreground w-20">
-                    {r.category}
-                  </span>
-                  <span className="text-xs font-mono text-muted-foreground w-12 text-right">
-                    {(r.confidence * 100).toFixed(0)}%
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => playRange(r.start, r.end)}
+                      disabled={committing}
+                      className="flex items-center justify-center w-6 h-6 rounded hover:bg-accent text-muted-foreground hover:text-foreground disabled:opacity-40 shrink-0"
+                      aria-label={`Preview region at ${r.start.toFixed(2)}s`}
+                      title="Preview this segment"
+                    >
+                      <Play className="w-3 h-3" />
+                    </button>
+                    <Checkbox
+                      checked={isAccepted}
+                      disabled={committing || belowFloor}
+                      onCheckedChange={() => toggleReject(r.wordIndex)}
+                      aria-label={`Toggle region at ${r.start.toFixed(2)}s`}
+                    />
+                    <span className="flex-1 min-w-0 break-words font-medium">
+                      {r.text}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 pl-8 text-[10px] text-muted-foreground font-mono">
+                    <span className="tabular-nums">
+                      {formatTime(r.start)}–{formatTime(r.end)}
+                    </span>
+                    <span className="uppercase tracking-wide">{r.category}</span>
+                    <span className="ml-auto">{(r.confidence * 100).toFixed(0)}%</span>
+                  </div>
                 </li>
               );
             })}
