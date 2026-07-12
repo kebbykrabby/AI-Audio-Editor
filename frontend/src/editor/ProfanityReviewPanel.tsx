@@ -122,93 +122,70 @@ export default function ProfanityReviewPanel() {
   };
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-4 shadow-sm">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-            <ShieldAlert className="w-3.5 h-3.5 text-primary" />
-            Review profanity
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {accepted.length} of {total} selected
-          </p>
-        </div>
-        <div className="flex gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={exitReview}
-            disabled={committing}
-            title="Discard detection and return to the editor"
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleCommit}
-            disabled={committing || isProcessing || accepted.length === 0}
-            title="Censor all currently-selected regions"
-          >
-            {committing
-              ? "Censoring…"
-              : `Censor ${accepted.length} word${accepted.length === 1 ? "" : "s"}`}
-          </Button>
-        </div>
+    <div className="rounded-lg border border-border bg-card shadow-sm flex flex-col h-full overflow-hidden">
+      {/* Fixed header */}
+      <div className="p-3 border-b border-border shrink-0 space-y-1.5">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+          <ShieldAlert className="w-3.5 h-3.5 text-primary" />
+          Review profanity
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          {accepted.length} of {total} selected
+        </p>
       </div>
 
-      {/* Mode selector */}
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] items-end">
-        <div>
-          <Label htmlFor="censor-mode" className="text-xs">
-            Mode
-          </Label>
-          <Select
-            value={review.mode}
-            onValueChange={(v) => setMode(v as CensorMode)}
-            disabled={committing}
-          >
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.keys(MODE_LABELS) as CensorMode[]).map((m) => (
-                <SelectItem key={m} value={m}>
-                  {MODE_LABELS[m]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {review.mode === "beep" && (
+      {/* Fixed mode selector */}
+      <div className="p-3 border-b border-border shrink-0 space-y-2">
+        <div className="grid gap-2 grid-cols-[minmax(0,1fr)_auto] items-end">
           <div>
-            <Label htmlFor="beep-hz" className="text-xs">
-              Frequency (Hz)
+            <Label htmlFor="censor-mode" className="text-xs">
+              Mode
             </Label>
-            <Input
-              id="beep-hz"
-              type="number"
-              min={200}
-              max={8000}
-              step={100}
-              value={review.beepHz}
-              onChange={(e) => setBeepHz(Number(e.target.value))}
+            <Select
+              value={review.mode}
+              onValueChange={(v) => setMode(v as CensorMode)}
               disabled={committing}
-              className="mt-1 w-28"
-            />
+            >
+              <SelectTrigger className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(MODE_LABELS) as CensorMode[]).map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {MODE_LABELS[m]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
+          {review.mode === "beep" && (
+            <div>
+              <Label htmlFor="beep-hz" className="text-xs">
+                Hz
+              </Label>
+              <Input
+                id="beep-hz"
+                type="number"
+                min={200}
+                max={8000}
+                step={100}
+                value={review.beepHz}
+                onChange={(e) => setBeepHz(Number(e.target.value))}
+                disabled={committing}
+                className="mt-1 w-20"
+              />
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground italic">
+          {MODE_DESCRIPTIONS[review.mode]}
+        </p>
       </div>
-      <p className="text-xs text-muted-foreground italic -mt-2">
-        {MODE_DESCRIPTIONS[review.mode]}
-      </p>
 
-      {/* Confidence slider — hidden when every match was exact */}
+      {/* Fixed confidence slider — hidden when every match was exact */}
       {hasNonExactMatches && (
-        <div className="flex items-center gap-3">
-          <label className="text-xs text-muted-foreground w-24 shrink-0">
-            Confidence floor
-          </label>
+        <div className="p-3 border-b border-border shrink-0 flex items-center gap-2">
+          <label className="text-xs text-muted-foreground shrink-0">Floor</label>
           <Slider
             min={0}
             max={1}
@@ -216,20 +193,19 @@ export default function ProfanityReviewPanel() {
             value={[review.confidenceThreshold]}
             onValueChange={([v]) => setThreshold(v)}
             disabled={committing}
-            className="max-w-xs"
+            className="flex-1"
           />
-          <span className="text-xs font-mono text-foreground w-10 text-right">
+          <span className="text-xs font-mono text-foreground w-8 text-right shrink-0">
             {review.confidenceThreshold.toFixed(2)}
           </span>
         </div>
       )}
 
-      {/* Region list — sidebar-friendly rows: word on line 1 (full width),
-          timestamp + match type + confidence on line 2 (small meta). */}
+      {/* Scrollable region list */}
       {total === 0 ? (
-        <p className="text-sm text-muted-foreground">No profanity detected in this audio.</p>
+        <p className="text-sm text-muted-foreground p-3">No profanity detected in this audio.</p>
       ) : (
-        <ScrollArea className="max-h-96 rounded-md border border-border">
+        <ScrollArea className="flex-1 min-h-0">
           <ul className="divide-y divide-border">
             {regions.map((r) => {
               const rejected = review.rejectedWordIndices.has(r.wordIndex);
@@ -276,6 +252,27 @@ export default function ProfanityReviewPanel() {
           </ul>
         </ScrollArea>
       )}
+
+      {/* Sticky action footer */}
+      <div className="p-3 border-t border-border shrink-0 flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={exitReview}
+          disabled={committing}
+          className="flex-1"
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          onClick={handleCommit}
+          disabled={committing || isProcessing || accepted.length === 0}
+          className="flex-1"
+        >
+          {committing ? "Censoring…" : `Censor ${accepted.length}`}
+        </Button>
+      </div>
     </div>
   );
 }

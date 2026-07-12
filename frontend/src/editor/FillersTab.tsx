@@ -24,7 +24,7 @@ export default function FillersTab() {
   // When a review is active, render the review UI — takes the full tab area.
   if (activeReview) {
     return (
-      <div className="p-3 overflow-y-auto h-full">
+      <div className="h-full p-3">
         <FillerReviewPanel />
       </div>
     );

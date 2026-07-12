@@ -24,8 +24,10 @@ export default function CensorTab() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   if (activeReview) {
+    // Review takes the full tab height; the panel manages its own scroll
+    // so the header + action buttons stay pinned.
     return (
-      <div className="p-3 overflow-y-auto h-full">
+      <div className="h-full p-3">
         <ProfanityReviewPanel />
       </div>
     );

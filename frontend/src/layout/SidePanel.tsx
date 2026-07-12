@@ -31,11 +31,14 @@ export default function SidePanel({
   setTab,
   collapsed,
   setCollapsed,
+  width,
 }: {
   tab: Tab;
   setTab: (t: Tab) => void;
   collapsed: boolean;
   setCollapsed: (v: boolean) => void;
+  /** Width in pixels; controlled from Shell via ResizeHandle. */
+  width: number;
 }) {
   const activeFillerReview = useEditorStore((s) => s.activeFillerReview);
   const activeProfanityReview = useEditorStore((s) => s.activeProfanityReview);
@@ -67,7 +70,10 @@ export default function SidePanel({
 
   return (
     <>
-      <div className="w-72 lg:w-80 border-l border-border bg-card flex flex-col shrink-0">
+      <div
+        className="border-l border-border bg-card flex flex-col shrink-0"
+        style={{ width }}
+      >
         {/* Tab bar */}
         <div className="flex items-center gap-1 px-2 py-2 border-b border-border">
           {TABS.map((t) => {

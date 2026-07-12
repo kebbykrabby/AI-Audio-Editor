@@ -26,7 +26,7 @@ export default function AiTab() {
 
   if (activeReview) {
     return (
-      <div className="p-3 overflow-y-auto h-full">
+      <div className="h-full p-3">
         <NlePlanReviewPanel />
       </div>
     );

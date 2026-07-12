@@ -94,44 +94,21 @@ export default function FillerReviewPanel() {
   };
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4 space-y-4 shadow-sm">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-            Review filler words
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {accepted.length} of {total} selected
-          </p>
-        </div>
-        <div className="flex gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={exitReview}
-            disabled={committing}
-            title="Discard detection and return to the editor"
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleCommit}
-            disabled={committing || isProcessing || accepted.length === 0}
-            title="Remove all currently-selected regions"
-          >
-            {committing
-              ? "Removing…"
-              : `Remove ${accepted.length} region${accepted.length === 1 ? "" : "s"}`}
-          </Button>
-        </div>
+    <div className="rounded-lg border border-border bg-card shadow-sm flex flex-col h-full overflow-hidden">
+      {/* Fixed header — title + meta */}
+      <div className="p-3 border-b border-border shrink-0 space-y-1.5">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+          <Sparkles className="w-3.5 h-3.5 text-primary" />
+          Review filler words
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          {accepted.length} of {total} selected
+        </p>
       </div>
 
-      {/* Confidence slider */}
-      <div className="flex items-center gap-3">
-        <label className="text-xs text-muted-foreground w-24 shrink-0">Confidence floor</label>
+      {/* Fixed confidence slider */}
+      <div className="p-3 border-b border-border shrink-0 flex items-center gap-2">
+        <label className="text-xs text-muted-foreground shrink-0">Floor</label>
         <Slider
           min={0}
           max={1}
@@ -139,21 +116,20 @@ export default function FillerReviewPanel() {
           value={[review.confidenceThreshold]}
           onValueChange={([v]) => setThreshold(v)}
           disabled={committing}
-          className="max-w-xs"
+          className="flex-1"
         />
-        <span className="text-xs font-mono text-foreground w-10 text-right">
+        <span className="text-xs font-mono text-foreground w-8 text-right shrink-0">
           {review.confidenceThreshold.toFixed(2)}
         </span>
       </div>
 
-      {/* Region list — sidebar-friendly rows: word on line 1 (full width),
-          timestamp + category + confidence on line 2 (small meta). */}
+      {/* Scrollable region list — flex-1 min-h-0 gives it the leftover height. */}
       {total === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground p-3">
           No filler words detected in this audio.
         </p>
       ) : (
-        <ScrollArea className="max-h-96 rounded-md border border-border">
+        <ScrollArea className="flex-1 min-h-0">
           <ul className="divide-y divide-border">
             {regions.map((r) => {
               const rejected = review.rejectedWordIndices.has(r.wordIndex);
@@ -200,6 +176,29 @@ export default function FillerReviewPanel() {
           </ul>
         </ScrollArea>
       )}
+
+      {/* Sticky action footer */}
+      <div className="p-3 border-t border-border shrink-0 flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={exitReview}
+          disabled={committing}
+          className="flex-1"
+          title="Discard detection and return to the editor"
+        >
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          onClick={handleCommit}
+          disabled={committing || isProcessing || accepted.length === 0}
+          className="flex-1"
+          title="Remove all currently-selected regions"
+        >
+          {committing ? "Removing…" : `Remove ${accepted.length}`}
+        </Button>
+      </div>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { Music } from "lucide-react";
 import UserMenu from "../auth/UserMenu";
 import { useEditorStore } from "../store/editorStore";
 import { useRestoreSession } from "../store/useRestoreSession";
+import ResizeHandle from "./ResizeHandle";
 import SidePanel from "./SidePanel";
 import Toolbar from "./Toolbar";
 import TransportBar from "./TransportBar";
@@ -14,6 +15,20 @@ import EditToolbar from "../editor/EditToolbar";
 import ChannelEditor from "../editor/ChannelEditor";
 
 type Tab = "history" | "fillers" | "censor" | "ai";
+
+const SIDE_WIDTH_KEY = "audioEditor.sidePanelWidth";
+const DEFAULT_SIDE_WIDTH = 320;
+
+function readSideWidth(): number {
+  try {
+    const raw = localStorage.getItem(SIDE_WIDTH_KEY);
+    if (!raw) return DEFAULT_SIDE_WIDTH;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 240 && n <= 640 ? n : DEFAULT_SIDE_WIDTH;
+  } catch {
+    return DEFAULT_SIDE_WIDTH;
+  }
+}
 
 /**
  * Editor route (`/editor`). Two-column layout:
@@ -36,6 +51,16 @@ export default function Shell() {
 
   const [tab, setTab] = useState<Tab>("history");
   const [sideCollapsed, setSideCollapsed] = useState(false);
+  const [sideWidth, setSideWidth] = useState<number>(readSideWidth);
+
+  // Persist width changes so the layout survives a reload.
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDE_WIDTH_KEY, String(sideWidth));
+    } catch {
+      // localStorage unavailable — persistence is best-effort.
+    }
+  }, [sideWidth]);
 
   useEffect(() => {
     return () => {
@@ -124,12 +149,18 @@ export default function Shell() {
               </div>
             </div>
 
+            {/* Draggable divider — hidden when the sidebar is collapsed. */}
+            {!sideCollapsed && (
+              <ResizeHandle width={sideWidth} onWidthChange={setSideWidth} />
+            )}
+
             {/* Right: sidebar with tabs */}
             <SidePanel
               tab={tab}
               setTab={setTab}
               collapsed={sideCollapsed}
               setCollapsed={setSideCollapsed}
+              width={sideWidth}
             />
           </>
         )}
