@@ -2,8 +2,6 @@
 
 A browser-based, DAW-style audio editor for cleaning up spoken-word recordings — with an AI review layer that proposes edits and lets you approve them before any audio changes.
 
-![Editor screenshot placeholder — capture the /editor screen against a real recording and save to docs/screenshot-editor.png](docs/screenshot-editor.png)
-
 ---
 
 ## Highlights
